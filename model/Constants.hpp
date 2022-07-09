@@ -21,8 +21,11 @@ namespace model {
 // Non changing game state
 class Constants {
 public:
+    static model::Constants INSTANCE;
+
     // Number of ticks per game second
     double ticksPerSecond;
+    double tickTime;
     // Starting number of units in each team
     int teamSize;
     // Initial zone radius
@@ -108,6 +111,8 @@ public:
     std::vector<std::vector<std::vector<const Obstacle*>>> obstacle_matrix;
     int minX, minY;
 
+    Constants() = default;
+
     Constants(double ticksPerSecond, int teamSize, double initialZoneRadius, double zoneSpeed, double zoneDamagePerSecond, double spawnTime, double spawnCollisionDamagePerSecond, double lootingTime, int botPlayers, double unitRadius, double unitHealth, double healthRegenerationPerSecond, double healthRegenerationDelay, double maxShield, double spawnShield, int extraLives, double lastRespawnZoneRadius, double fieldOfView, double viewDistance, bool viewBlocking, double rotationSpeed, double spawnMovementSpeed, double maxUnitForwardSpeed, double maxUnitBackwardSpeed, double unitAcceleration, bool friendlyFire, double killScore, double damageScoreMultiplier, double scorePerPlace, std::vector<model::WeaponProperties> weapons, std::optional<int> startingWeapon, int startingWeaponAmmo, int maxShieldPotionsInInventory, double shieldPerPotion, double shieldPotionUseTime, std::vector<model::SoundProperties> sounds, std::optional<int> stepsSoundTypeIndex, double stepsSoundTravelDistance, std::vector<model::Obstacle> obstacles);
 
     // Read Constants from input stream
@@ -121,6 +126,7 @@ public:
     }
 
     void Update() {
+        tickTime = 1. / ticksPerSecond;
         unitAccelerationPerTick = unitAcceleration / ticksPerSecond;
         unitMovementCircleShift = (maxUnitForwardSpeed - maxUnitBackwardSpeed) * .5;
         unitMovementCircleRadius = (maxUnitForwardSpeed + maxUnitBackwardSpeed) * .5;

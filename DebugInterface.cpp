@@ -1,6 +1,8 @@
 #include "DebugInterface.hpp"
 #include "codegame/ClientMessage.hpp"
 
+DebugInterface* DebugInterface::INSTANCE = nullptr;
+
 DebugInterface::DebugInterface(TcpStream* stream): stream(stream) {}
 
 void DebugInterface::addPlacedText(model::Vec2 position, std::string text, model::Vec2 alignment, double size, debugging::Color color)

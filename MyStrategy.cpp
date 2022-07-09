@@ -3,6 +3,7 @@
 #include <exception>
 #include <iostream>
 #include <algorithm>
+#include <unordered_map>
 
 namespace {
     using namespace model;
@@ -21,15 +22,70 @@ namespace {
         });
         return result;
     }
+
+    void UpdateLifetime(Projectile &projectile) {
+        const Constants &constants = Constants::INSTANCE;
+        double remaining_time = projectile.lifeTime;
+        Vec2 position = projectile.position;
+        while (remaining_time > 1e-10) {
+            const double currSimTime = std::min(constants.tickTime, remaining_time);
+            Vec2 next_pos = position + projectile.velocity * currSimTime;
+            const auto &[obstacle, point] = GetClosestCollision<true>(position, next_pos, 0);
+            if (obstacle) {
+                projectile.lifeTime = projectile.lifeTime - remaining_time
+                                      + (point - position).norm() / (next_pos - position).norm() * currSimTime;
+                return;
+            }
+            remaining_time -= constants.tickTime;
+            position = next_pos;
+        }
+    }
+
+    void UpdateProjectiles(Game &game, std::optional<Game>& last_tick) {
+        std::unordered_map<int, Projectile *> from_prev_tick;
+        const Constants &constants = Constants::INSTANCE;
+        if (last_tick) {
+            for (auto &shot: last_tick->projectiles) {
+                shot.lifeTime -= constants.tickTime;
+                if (shot.lifeTime > 0.) {
+                    from_prev_tick[shot.id] = &shot;
+                }
+            }
+        }
+
+        for (auto &curr_shot: game.projectiles) {
+            if (from_prev_tick.count(curr_shot.id)) {
+                curr_shot.lifeTime = from_prev_tick[curr_shot.id]->lifeTime;
+                from_prev_tick.erase(curr_shot.id);
+            } else {
+                UpdateLifetime(curr_shot);
+            }
+        }
+        for (auto &[_, projectile]: from_prev_tick) {
+            projectile->position += projectile->velocity * constants.tickTime;
+            game.projectiles.push_back(*projectile);
+        }
+        DRAW(
+                for (auto &curr_shot: game.projectiles) {
+                    DebugInterface::INSTANCE->addGradientSegment(curr_shot.position, debugging::Color(1., 0., 0., .8),
+                                                                 curr_shot.position +
+                                                                 curr_shot.velocity * curr_shot.lifeTime,
+                                                                 debugging::Color(0., 1., 0., .8),
+                                                                 .1);
+                }
+        );
+    }
 }
 
-MyStrategy::MyStrategy(const model::Constants &constants) : constants(constants) {
-    this->constants.Update();
+MyStrategy::MyStrategy(const model::Constants &constants) {
+    Constants::INSTANCE = constants;
+    Constants::INSTANCE.Update();
 }
 
 model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *debugInterface) {
+    DebugInterface::INSTANCE = debugInterface;
     Game game = game_base;
-    std::cerr << game.currentTick << std::endl;
+//    std::cerr << game.currentTick << std::endl;
     for (auto &unit: game.units) {
         DRAW(
                 debugInterface->addPlacedText(unit.position + model::Vec2{1., 1.},
@@ -48,6 +104,8 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
 
     auto my_units = filterUnits(game.units, my_units_filter);
     auto enemy_units = filterUnits(game.units, enemies_filter);
+
+    UpdateProjectiles(game, last_tick_game);
 
     double closest_enemy_dst = std::numeric_limits<double>::max();
     const Unit *enemy_to_attack = nullptr;
@@ -92,8 +150,12 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
                 return nullptr;
             }();
             if ((old_unit->position - unit->position).norm() > 1e-10) {
-                std::cerr << "pos expected " << old_unit->position.toString() << " actual " << unit->position.toString() << " diff " << (old_unit->position - unit->position).norm() << std::endl;
-                std::cerr << "vel expected " << old_unit->velocity.toString() << " actual " << unit->velocity.toString() << " diff " << (old_unit->velocity - unit->velocity).norm() << std::endl;
+                std::cerr << game.currentTick << " pos expected " << old_unit->position.toString() << " actual "
+                          << unit->position.toString() << " diff " << (old_unit->position - unit->position).norm()
+                          << std::endl;
+                std::cerr << game.currentTick << " vel expected " << old_unit->velocity.toString() << " actual "
+                          << unit->velocity.toString() << " diff " << (old_unit->velocity - unit->velocity).norm()
+                          << std::endl;
             }
         }
 
@@ -132,23 +194,25 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
             order.targetDirection = *point_look_to - unit->position;
             const double prev_direction = unit->direction.toRadians();
             unit->direction = applyNewDirection(unit->direction, order.targetDirection,
-                                                rotationSpeed(unit->aim, unit->weapon, constants));
+                                                rotationSpeed(unit->aim, unit->weapon));
         }
+        // aim
         if (point_move_to) {
-            const auto vector = MaxSpeedVector(unit->position, unit->direction, *point_move_to, constants);
+            const auto vector = MaxSpeedVector(unit->position, unit->direction, *point_move_to,
+                                               CalcAimSpeedModifier(*unit));
             order.targetVelocity = vector;
-            unit->velocity = ResultSpeedVector(unit->velocity, vector, constants);
-            updateForCollision(*unit, constants, debugInterface);
+            unit->velocity = ResultSpeedVector(unit->velocity, vector);
+            updateForCollision(*unit);
         }
 
-        for (const auto &target: kMoveDirections) {
-            const auto point = unit->position + target.toLen(30);
-            const auto vector = MaxSpeedVector(unit->position, unit->direction, point, constants);
-//            DRAW(
-//                    debugInterface->addGradientSegment(unit->position, debugging::Color(1., 0., 0., 1.),
-//                                                       unit->position + vector, debugging::Color(0., 1., 0., 1.), .1);
-//            );
-        }
+//        for (const auto &target: kMoveDirections) {
+//            const auto point = unit->position + target.toLen(30);
+//            const auto vector = MaxSpeedVector(unit->position, unit->direction, point, constants);
+////            DRAW(
+////                    debugInterface->addGradientSegment(unit->position, debugging::Color(1., 0., 0., 1.),
+////                                                       unit->position + vector, debugging::Color(0., 1., 0., 1.), .1);
+////            );
+//        }
 
         orders[unit->id] = std::move(order);
     }

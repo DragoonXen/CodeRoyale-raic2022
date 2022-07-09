@@ -7,7 +7,6 @@
 #include "model/Constants.hpp"
 
 class MyStrategy {
-    model::Constants constants;
     std::optional<model::Game> last_tick_game;
 
     std::optional<model::Vec2> point_move_to;

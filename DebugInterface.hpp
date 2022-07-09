@@ -8,6 +8,8 @@
 
 class DebugInterface {
 public:
+    static DebugInterface* INSTANCE;
+
     DebugInterface(TcpStream* stream);
 
     void addPlacedText(model::Vec2 position, std::string text, model::Vec2 alignment, double size, debugging::Color color);
