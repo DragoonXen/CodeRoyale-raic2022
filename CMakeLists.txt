@@ -74,7 +74,7 @@ set (SRC
     "model/Vec2.cpp"
     "model/WeaponProperties.cpp"
     "model/Zone.cpp"
-)
+        utils/Movement.hpp)
 SET_SOURCE_FILES_PROPERTIES(${HEADERS} PROPERTIES HEADER_FILE_ONLY TRUE)
 include_directories(".")
 add_executable(ai_cup_22 ${HEADERS} ${SRC})

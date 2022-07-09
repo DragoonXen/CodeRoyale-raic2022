@@ -41,6 +41,7 @@ void Draw(const T function) {
 
 #include <sstream>
 
+
 template <typename T>
 std::string to_string_p(const T a_value, const int n = 6)
 {
@@ -51,7 +52,7 @@ std::string to_string_p(const T a_value, const int n = 6)
 }
 
 #ifdef DEBUG_INFO
-#define DRAW(a) Draw(a)
+#define DRAW(a) Draw(([&](){a}))
 #else
 #define DRAW(a) Draw(nullptr)
 #endif

@@ -12,9 +12,6 @@ class MyStrategy {
 
     std::optional<model::Vec2> point_move_to;
     std::optional<model::Vec2> point_look_to;
-    std::optional<model::Vec2> expected;
-
-    std::stringstream sstr;
 
 public:
     MyStrategy(const model::Constants& constants);

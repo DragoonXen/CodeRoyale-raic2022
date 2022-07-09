@@ -41,9 +41,21 @@ public:
         return {this->x * val, this->y * val};
     }
 
+    Vec2& operator+=(const Vec2 val) {
+        this->x += val.x;
+        this->y += val.y;
+        return *this;
+    }
+
     Vec2& operator*=(const double val) {
         this->x *= val;
         this->y *= val;
+        return *this;
+    }
+
+    Vec2& operator-=(const Vec2& val) {
+        this->x -= val.x;
+        this->y -= val.y;
         return *this;
     }
 
@@ -65,6 +77,21 @@ public:
 
     double sqrNorm() const {
         return x * x + y * y;
+    }
+
+    double toRadians() const {
+        return std::atan2(y, x);
+    }
+
+    double dot(Vec2 other) const {
+        return x * other.x + y * other.y;
+    }
+
+    Vec2& rotate90() {
+        double mem = x;
+        x = y;
+        y = -mem;
+        return *this;
     }
 
 };
