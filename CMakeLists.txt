@@ -29,7 +29,6 @@ set(HEADERS
     "model/ActionType.hpp"
     "model/Constants.hpp"
     "model/Game.hpp"
-    "model/Item.hpp"
     "model/Loot.hpp"
     "model/Obstacle.hpp"
     "model/Order.hpp"
@@ -44,7 +43,8 @@ set(HEADERS
     "model/Zone.hpp"
     "utils/Movement.hpp"
     "utils/Util.hpp"
-    "utils/Simulation.hpp")
+    "utils/Simulation.hpp"
+    "utils/TickStartUpdate.h")
 set (SRC
     "DebugInterface.cpp"
     "MyStrategy.cpp"
@@ -64,7 +64,6 @@ set (SRC
     "model/ActionType.cpp"
     "model/Constants.cpp"
     "model/Game.cpp"
-    "model/Item.cpp"
     "model/Loot.cpp"
     "model/Obstacle.cpp"
     "model/Order.cpp"
@@ -76,7 +75,8 @@ set (SRC
     "model/UnitOrder.cpp"
     "model/Vec2.cpp"
     "model/WeaponProperties.cpp"
-    "model/Zone.cpp")
+    "model/Zone.cpp"
+    "utils/TickStartUpdate.h")
 SET_SOURCE_FILES_PROPERTIES(${HEADERS} PROPERTIES HEADER_FILE_ONLY TRUE)
 include_directories(".")
 add_executable(ai_cup_22 ${HEADERS} ${SRC})

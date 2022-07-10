@@ -10,13 +10,6 @@
 #include "Util.hpp"
 #include <iostream>
 
-//enum MovemendSide {
-//    kNorth, KNorthWest, kWest, kSouthWest, kSouth, kSouthEast, kEast, kNorthEast
-//};
-
-//template<MovemendSide side>
-//Vec2 MaxSpeedVector(Vec2 position, Vec2 currentSpeed);
-
 using namespace model;
 
 const std::vector<Vec2> kMoveDirections = []() {
@@ -66,8 +59,7 @@ inline double CalcAimSpeedModifier(const Unit& unit) {
                                  (1. - Constants::INSTANCE.weapons[*unit.weapon].aimMovementSpeedModifier) * unit.aim);
 }
 
-Vec2
-MaxSpeedVector(Vec2 position, Vec2 direction, Vec2 target, const double aimModifier = 1) {
+Vec2 MaxSpeedVector(Vec2 position, Vec2 direction, Vec2 target, const double aimModifier = 1) {
     const Constants &constants = Constants::INSTANCE;
     const Vec2 coordsShift = position + direction * constants.unitMovementCircleShift;
     position -= coordsShift;
@@ -102,8 +94,7 @@ inline double rotationSpeed(double aim, const std::optional<int>& weapon) {
                    : constants.rotationSpeed;
 }
 
-inline Vec2
-applyNewDirection(Vec2 currentDirection, Vec2 targetDirection, const double rotation_speed) {
+inline Vec2 applyNewDirection(Vec2 currentDirection, Vec2 targetDirection, const double rotation_speed) {
     double curr_angle = currentDirection.toRadians();
     double angle_diff = targetDirection.toRadians() - curr_angle;
     if (angle_diff > M_PI) {
@@ -130,34 +121,30 @@ inline void updateForCollision(Vec2& position, Vec2& velocity) {
                                                             position + velocity * time_remained,
                                                             constants.unitRadius, prev_collision);
         if (!obstacle) {
-            DRAW(debugInterface->addGradientSegment(position, debugging::Color(1., 0., 0., 1.),
-                                                              position + velocity * time_remained,
-                                                              debugging::Color(0., 1., 0., 1.), 0.03););
-//            std::cerr << "new_move " << (velocity * time_remained).toString() << " norm "
-//                      << (velocity * time_remained).norm() << " time_remained " << time_remained
-//                      << std::endl;
+            DRAWK('M',
+                  debugInterface->addGradientSegment(position, debugging::Color(1., 0., 0., 1.),
+                                                     position + velocity * time_remained,
+                                                     debugging::Color(0., 1., 0., 1.), 0.03););
             position += velocity * time_remained;
             return std::nullopt;
         }
         const Obstacle &obstacleRef = **obstacle;
         const auto collision_point = firstCollision(position, velocity, constants.unitRadius, obstacleRef,
                                                     time_remained);
-        DRAW(
-                auto norm = (obstacleRef.position - collision_point).toLen(constants.unitRadius);
-                auto new_pt = collision_point + norm;
-                norm.rotate90().toLen(2.);
-                debugInterface->addSegment(new_pt - norm, new_pt + norm, 0.03,
-                                           debugging::Color(0., 0., 1., 1.));
-        );
+        DRAWK('M', {
+            auto norm = (obstacleRef.position - collision_point).toLen(constants.unitRadius);
+            auto new_pt = collision_point + norm;
+            norm.rotate90().toLen(2.);
+            debugInterface->addSegment(new_pt - norm, new_pt + norm, 0.03,
+                                       debugging::Color(0., 0., 1., 1.));
+        });
         time_remained -=
                 time_remained * (collision_point - position).norm() / (velocity * time_remained).norm();
         const Vec2 norm = (obstacleRef.position - collision_point).toLen(1.);
         velocity -= norm * velocity.dot(norm);
-        DRAW(debugInterface->addGradientSegment(position, debugging::Color(1., 0., 0., 1.),
-                                                collision_point,
-                                                debugging::Color(0., 1., 0., 1.), 0.03););
-//        std::cerr << "first_move " << (collision_point - position).toString() << " norm "
-//                  << (collision_point - position).norm() << " time_remained " << time_remained << std::endl;
+        DRAWK('M', debugInterface->addGradientSegment(position, debugging::Color(1., 0., 0., 1.),
+                                                      collision_point,
+                                                      debugging::Color(0., 1., 0., 1.), 0.03););
         position = collision_point;
         return obstacleRef.id;
     };

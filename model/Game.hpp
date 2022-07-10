@@ -4,7 +4,6 @@
 #include "Stream.hpp"
 #include "model/Action.hpp"
 #include "model/ActionType.hpp"
-#include "model/Item.hpp"
 #include "model/Loot.hpp"
 #include "model/Player.hpp"
 #include "model/Projectile.hpp"

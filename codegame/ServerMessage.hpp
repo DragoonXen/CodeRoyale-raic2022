@@ -6,7 +6,6 @@
 #include "model/ActionType.hpp"
 #include "model/Constants.hpp"
 #include "model/Game.hpp"
-#include "model/Item.hpp"
 #include "model/Loot.hpp"
 #include "model/Obstacle.hpp"
 #include "model/Player.hpp"

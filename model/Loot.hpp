@@ -2,7 +2,6 @@
 #define __MODEL_LOOT_HPP__
 
 #include "Stream.hpp"
-#include "model/Item.hpp"
 #include "model/Vec2.hpp"
 #include <memory>
 #include <sstream>
@@ -18,10 +17,14 @@ public:
     int id;
     // Position
     model::Vec2 position;
-    // Item
-    std::shared_ptr<model::Item> item;
 
-    Loot(int id, model::Vec2 position, std::shared_ptr<model::Item> item);
+    int tag;
+    // Weapon type index (starting with 0)
+    int weaponTypeIndex;
+    // Amount of ammo
+    int amount;
+
+    Loot(int id, model::Vec2 position, int tag, int weaponTypeIndex, int amount);
 
     // Read Loot from input stream
     static Loot readFrom(InputStream& stream);
