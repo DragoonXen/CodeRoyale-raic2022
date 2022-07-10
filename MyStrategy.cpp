@@ -222,23 +222,7 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
                     avoidRules.push_back({to, to, false, std::numeric_limits<double>::infinity()});
                 }
                 size_t rule_id = ChooseBest(*unit, game, avoidRules);
-                const auto &selected_rule = avoidRules[rule_id];
-                model::UnitOrder order;
-                if (selected_rule.lookDirection) {
-                    unit->direction = applyNewDirection(unit->direction, *selected_rule.lookDirection - unit->position,
-                                                        rotationSpeed(unit->aim, unit->weapon));
-                }
-                order.targetDirection = unit->direction;
-
-                const auto velocity = MaxSpeedVector(unit->position, unit->direction, selected_rule.moveDirection,
-                                                     CalcAimSpeedModifier(*unit));
-                if (sqr(selected_rule.speedLimit) < velocity.sqrNorm()) {
-                    velocity.toLen(selected_rule.speedLimit);
-                }
-                order.targetVelocity = velocity;
-                unit->velocity = ResultSpeedVector(unit->velocity, velocity);
-                updateForCollision(unit->position, unit->velocity);
-                orders[unit->id] = std::move(order);
+                orders[unit->id] = ApplyAvoidRule(*unit, avoidRules[rule_id]);
                 continue;
             }
         }

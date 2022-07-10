@@ -9,6 +9,7 @@
 #include "model/Constants.hpp"
 #include "Movement.hpp"
 #include "DebugInterface.hpp"
+#include "model/UnitOrder.hpp"
 
 #ifndef AI_CUP_22_SIMULATION_HPP
 #define AI_CUP_22_SIMULATION_HPP
@@ -111,6 +112,25 @@ size_t ChooseBest(const Unit &unit, const Game &game, const std::vector<AvoidRul
         }
     }
     return best_id;
+}
+
+UnitOrder ApplyAvoidRule(Unit& unit, const AvoidRule& selected_rule) {
+    UnitOrder order;
+    if (selected_rule.lookDirection) {
+        unit.direction = applyNewDirection(unit.direction, *selected_rule.lookDirection - unit.position,
+                                            rotationSpeed(unit.aim, unit.weapon));
+    }
+    order.targetDirection = unit.direction;
+
+    const auto velocity =
+            MaxSpeedVector(unit.position, unit.direction, selected_rule.moveDirection, CalcAimSpeedModifier(unit));
+    if (sqr(selected_rule.speedLimit) < velocity.sqrNorm()) {
+        velocity.toLen(selected_rule.speedLimit);
+    }
+    order.targetVelocity = velocity;
+    unit.velocity = ResultSpeedVector(unit.velocity, velocity);
+    updateForCollision(unit.position, unit.velocity);
+    return order;
 }
 
 #endif //AI_CUP_22_SIMULATION_HPP
