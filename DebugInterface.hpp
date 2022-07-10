@@ -54,7 +54,7 @@ std::string to_string_p(const T a_value, const int n = 6)
 }
 
 #ifdef DEBUG_INFO
-#define DRAW(a) Draw(([&](){a}))
+#define DRAW(a) Draw(([&](){auto debugInterface = DebugInterface::INSTANCE;a}))
 #else
 #define DRAW(a) Draw(nullptr)
 #endif

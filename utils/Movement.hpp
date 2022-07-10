@@ -19,14 +19,17 @@
 
 using namespace model;
 
-const std::vector<Vec2> kMoveDirections{{1.,  0.},
-                                        {1.,  1.},
-                                        {0.,  1.},
-                                        {-1., 1.},
-                                        {-1., 0.},
-                                        {-1., -1.},
-                                        {0.,  -1.},
-                                        {1.,  -1.}};
+const std::vector<Vec2> kMoveDirections = []() {
+    constexpr double stepCount = 12.;
+    std::vector<Vec2> result(stepCount);
+
+    const double angleStep = M_PI * 2 / stepCount;
+    for (size_t i = 0; i != stepCount; ++i) {
+        const double currAngle = i * angleStep;
+        result[i] = {std::cos(currAngle), std::sin(currAngle)};
+    }
+    return result;
+}();
 
 Vec2 firstCollision(Vec2 position, Vec2 velocity, const double unit_radius, const Obstacle &obstacle,
                     const double remaining_time) {
@@ -117,45 +120,45 @@ applyNewDirection(Vec2 currentDirection, Vec2 targetDirection, const double rota
     return {std::cos(curr_angle), std::sin(curr_angle)};
 }
 
-inline void updateForCollision(Unit& unit) {
+inline void updateForCollision(Vec2& position, Vec2& velocity) {
     const Constants& constants = Constants::INSTANCE;
-    const auto& obstacles = constants.Get(unit.position);
+    const auto& obstacles = constants.Get(position);
     double time_remained = 1. / constants.ticksPerSecond;
 
     const auto nextMove = [&](const std::optional<int> prev_collision) -> std::optional<int> {
-        const auto &[obstacle, point] = GetClosestCollision(unit.position,
-                                                            unit.position + unit.velocity * time_remained,
+        const auto &[obstacle, point] = GetClosestCollision(position,
+                                                            position + velocity * time_remained,
                                                             constants.unitRadius, prev_collision);
         if (!obstacle) {
-            DRAW(DebugInterface::INSTANCE->addGradientSegment(unit.position, debugging::Color(1., 0., 0., 1.),
-                                                              unit.position + unit.velocity * time_remained,
+            DRAW(debugInterface->addGradientSegment(position, debugging::Color(1., 0., 0., 1.),
+                                                              position + velocity * time_remained,
                                                               debugging::Color(0., 1., 0., 1.), 0.03););
-//            std::cerr << "new_move " << (unit.velocity * time_remained).toString() << " norm "
-//                      << (unit.velocity * time_remained).norm() << " time_remained " << time_remained
+//            std::cerr << "new_move " << (velocity * time_remained).toString() << " norm "
+//                      << (velocity * time_remained).norm() << " time_remained " << time_remained
 //                      << std::endl;
-            unit.position += unit.velocity * time_remained;
+            position += velocity * time_remained;
             return std::nullopt;
         }
         const Obstacle &obstacleRef = **obstacle;
-        const auto collision_point = firstCollision(unit.position, unit.velocity, constants.unitRadius, obstacleRef,
+        const auto collision_point = firstCollision(position, velocity, constants.unitRadius, obstacleRef,
                                                     time_remained);
         DRAW(
                 auto norm = (obstacleRef.position - collision_point).toLen(constants.unitRadius);
                 auto new_pt = collision_point + norm;
                 norm.rotate90().toLen(2.);
-                DebugInterface::INSTANCE->addSegment(new_pt - norm, new_pt + norm, 0.03,
-                                                     debugging::Color(0., 0., 1., 1.));
+                debugInterface->addSegment(new_pt - norm, new_pt + norm, 0.03,
+                                           debugging::Color(0., 0., 1., 1.));
         );
         time_remained -=
-                time_remained * (collision_point - unit.position).norm() / (unit.velocity * time_remained).norm();
+                time_remained * (collision_point - position).norm() / (velocity * time_remained).norm();
         const Vec2 norm = (obstacleRef.position - collision_point).toLen(1.);
-        unit.velocity -= norm * unit.velocity.dot(norm);
-        DRAW(DebugInterface::INSTANCE->addGradientSegment(unit.position, debugging::Color(1., 0., 0., 1.),
-                                                          collision_point,
-                                                          debugging::Color(0., 1., 0., 1.), 0.03););
-//        std::cerr << "first_move " << (collision_point - unit.position).toString() << " norm "
-//                  << (collision_point - unit.position).norm() << " time_remained " << time_remained << std::endl;
-        unit.position = collision_point;
+        velocity -= norm * velocity.dot(norm);
+        DRAW(debugInterface->addGradientSegment(position, debugging::Color(1., 0., 0., 1.),
+                                                collision_point,
+                                                debugging::Color(0., 1., 0., 1.), 0.03););
+//        std::cerr << "first_move " << (collision_point - position).toString() << " norm "
+//                  << (collision_point - position).norm() << " time_remained " << time_remained << std::endl;
+        position = collision_point;
         return obstacleRef.id;
     };
 

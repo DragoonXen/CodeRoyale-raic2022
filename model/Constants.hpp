@@ -50,6 +50,8 @@ public:
     double healthRegenerationPerSecond;
     // Time until automatic health regeneration since last health damage (in seconds)
     double healthRegenerationDelay;
+
+    int healthRegenerationDelayTicks;
     // Max value of unit's shield
     double maxShield;
     // Initial value of unit's shield
@@ -127,6 +129,7 @@ public:
 
     void Update() {
         tickTime = 1. / ticksPerSecond;
+        healthRegenerationDelayTicks = (int)std::round(healthRegenerationDelay / tickTime);
         unitAccelerationPerTick = unitAcceleration / ticksPerSecond;
         unitMovementCircleShift = (maxUnitForwardSpeed - maxUnitBackwardSpeed) * .5;
         unitMovementCircleRadius = (maxUnitForwardSpeed + maxUnitBackwardSpeed) * .5;
@@ -135,6 +138,7 @@ public:
         for (auto& weapon : weapons) {
             weapon.aimRotationSpeed *= M_PI / 180. / ticksPerSecond;
             weapon.aimFieldOfView *= M_PI / 180.;
+            weapon.aimPerTick = tickTime / weapon.aimTime;
         }
 
         double minX, minY;

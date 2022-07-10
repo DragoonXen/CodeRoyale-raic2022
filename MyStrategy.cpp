@@ -67,13 +67,110 @@ namespace {
         }
         DRAW(
                 for (auto &curr_shot: game.projectiles) {
-                    DebugInterface::INSTANCE->addGradientSegment(curr_shot.position, debugging::Color(1., 0., 0., .8),
-                                                                 curr_shot.position +
-                                                                 curr_shot.velocity * curr_shot.lifeTime,
-                                                                 debugging::Color(0., 1., 0., .8),
-                                                                 .1);
+                    debugInterface->addGradientSegment(curr_shot.position, debugging::Color(1., 0., 0., .8),
+                                                       curr_shot.position +
+                                                       curr_shot.velocity * curr_shot.lifeTime,
+                                                       debugging::Color(0., 1., 0., .8),
+                                                       .1);
                 }
         );
+    }
+
+    std::tuple<Unit, double, const Projectile *>
+    Simulate(Unit unit, const Game &game, const Vec2 &moveDirection, std::optional<Vec2> lookDirection,
+             bool keepAim,
+             const double speedLimit = Constants::INSTANCE.maxUnitForwardSpeed,
+             size_t deep = 20) {
+        const auto &constants = Constants::INSTANCE;
+        double damagePenalty = 0.;
+        Vec2 last_position;
+        std::vector<const Projectile *> remained_projectiles(game.projectiles.size());
+        const Projectile* firstProjectile = nullptr;
+        for (size_t i = 0; i != game.projectiles.size(); ++i) {
+            remained_projectiles[i] = &game.projectiles[i];
+        }
+        for (size_t tick = 0; tick != deep; ++tick) {
+            last_position = unit.position;
+            if (lookDirection) {
+                unit.direction = applyNewDirection(unit.direction, *lookDirection - unit.position,
+                                                   rotationSpeed(unit.aim, unit.weapon));
+            }
+            unit.aim = CalcResultAim(keepAim, unit.aim, unit.weapon);
+
+            const auto vector = MaxSpeedVector(unit.position, unit.direction, moveDirection,
+                                               CalcAimSpeedModifier(unit)).LimitLength(speedLimit);
+            unit.velocity = ResultSpeedVector(unit.velocity, vector);
+            updateForCollision(unit.position, unit.velocity);
+
+            const double tickTime = constants.tickTime;
+            const double passedTime = tickTime * tick;
+            double damage = 0.;
+            for (size_t i = 0; i != remained_projectiles.size(); ++i) {
+                const auto projectile = remained_projectiles[i];
+                if (projectile->lifeTime <= passedTime) {
+                    continue;
+                }
+                const double simTime = std::min(projectile->lifeTime - passedTime, tickTime);
+                const Vec2 unitVelocity = (unit.position - last_position) * (1. / tickTime);
+                if (!IsCollide(last_position, unitVelocity, projectile->position + projectile->velocity * passedTime,
+                               projectile->velocity, simTime, constants.unitRadius + 1e-5)) {
+                    continue;
+                }
+                remained_projectiles[i] = remained_projectiles.back();
+                remained_projectiles.pop_back();
+                --i;
+                if (unit.playerId == projectile->shooterPlayerId && !constants.friendlyFire) {
+                    continue;
+                }
+                if (firstProjectile == nullptr) {
+                    firstProjectile = projectile;
+                }
+                damage += constants.weapons[projectile->weaponTypeIndex].projectileDamage;
+            }
+            DRAW(
+                    debugInterface->addCircle(unit.position, constants.unitRadius,
+                                              damage == 0 ? debugging::Color(1., .7, 0., .1) : debugging::Color(1., 0.,
+                                                                                                                0.,
+                                                                                                                .1));
+            );
+            constexpr double damageExp = 1.001;
+            damagePenalty *= damageExp;
+            damagePenalty += std::min(damage, unit.health + unit.shield);
+            ApplyDamage(unit, damage, game.currentTick);
+            if (unit.health < 1e-3) {
+                for (++tick; tick != deep; ++tick) {
+                    damagePenalty *= damageExp;
+                }
+                return {unit, damagePenalty, firstProjectile};
+            }
+        }
+
+        return {unit, damagePenalty, firstProjectile};
+    }
+
+    struct AvoidRule {
+        Vec2 moveDirection;
+        std::optional<Vec2> lookDirection;
+        bool keepAim;
+        double speedLimit;
+    };
+
+    size_t ChooseBest(const Unit &unit, const Game &game, const std::vector<AvoidRule> &rules) {
+        double minScore = std::numeric_limits<double>::infinity();
+        size_t best_id = 0;
+        for (size_t id = 0; id != rules.size(); ++id) {
+            const auto& rule = rules[id];
+            const auto [_, score, _2] = Simulate(unit, game, rule.moveDirection, rule.lookDirection, rule.keepAim,
+                                                rule.speedLimit);
+            if (score < minScore) {
+                if (score == 0.) {
+                    return id;
+                }
+                minScore = score;
+                best_id = id;
+            }
+        }
+        return best_id;
     }
 }
 
@@ -89,12 +186,11 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
     for (auto &unit: game.units) {
         DRAW(
                 debugInterface->addPlacedText(unit.position + model::Vec2{1., 1.},
-                                              "unit " + std::to_string(unit.id),
-                                              {0., 0.}, 0.1,
-                                              debugging::Color(0, 0, 0, 1));
-                debugInterface->addPlacedText(unit.position + model::Vec2{1., 0.7},
-                                              to_string_p(unit.shield, 1) + "|" + to_string_p(unit.health, 1),
-                                              {0., 0.}, 0.1,
+                                              "unit " + std::to_string(unit.id) + "\n" + to_string_p(unit.shield, 1) +
+                                              "|" + to_string_p(unit.health, 1) + "\n" +
+                                              to_string_p(unit.position.x, 2) + "|" + to_string_p(unit.position.y, 2) +
+                                              "\n",
+                                              {0., 0.}, 1,
                                               debugging::Color(0, 0, 0, 1));
         );
     }
@@ -188,11 +284,60 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
 //                    }
 //                });
 
+        /** AVOID LOGIC **/
+        if (point_move_to) {
+            const auto [resultUnit, damageScore, firstProjectile] = Simulate(*unit, game, *point_move_to, point_look_to,
+                                                                             false);
+            if (damageScore != 0.) {
+                Vec2 norm = {firstProjectile->velocity.y, -firstProjectile->velocity.x};
+                if ((unit->velocity - norm).sqrNorm() > (unit->velocity + norm).sqrNorm()) {
+                    norm = -norm;
+                }
+                std::vector<AvoidRule> avoidRules;
+                constexpr double kMoveLength = 30.;
+                avoidRules.push_back({unit->position + norm.toLen(kMoveLength), point_look_to, false,
+                                      std::numeric_limits<double>::infinity()});
+                avoidRules.push_back({unit->position - norm.toLen(kMoveLength), point_look_to, false,
+                                      std::numeric_limits<double>::infinity()});
+                for (const auto &dir: kMoveDirections) {
+                    avoidRules.push_back({unit->position + dir * kMoveLength, point_look_to, false,
+                                          std::numeric_limits<double>::infinity()});
+                }
+                avoidRules.push_back(
+                        {unit->position + norm.toLen(kMoveLength), unit->position + norm.toLen(kMoveLength), false,
+                         std::numeric_limits<double>::infinity()});
+                avoidRules.push_back(
+                        {unit->position - norm.toLen(kMoveLength), unit->position - norm.toLen(kMoveLength), false,
+                         std::numeric_limits<double>::infinity()});
+                for (const auto &dir: kMoveDirections) {
+                    Vec2 to = unit->position + dir * kMoveLength;
+                    avoidRules.push_back({to, to, false, std::numeric_limits<double>::infinity()});
+                }
+                size_t rule_id = ChooseBest(*unit, game, avoidRules);
+                const auto &selected_rule = avoidRules[rule_id];
+                model::UnitOrder order;
+                if (selected_rule.lookDirection) {
+                    unit->direction = applyNewDirection(unit->direction, *selected_rule.lookDirection - unit->position,
+                                                        rotationSpeed(unit->aim, unit->weapon));
+                }
+                order.targetDirection = unit->direction;
+
+                const auto velocity = MaxSpeedVector(unit->position, unit->direction, selected_rule.moveDirection,
+                                                     CalcAimSpeedModifier(*unit));
+                if (sqr(selected_rule.speedLimit) < velocity.sqrNorm()) {
+                    velocity.toLen(selected_rule.speedLimit);
+                }
+                order.targetVelocity = velocity;
+                unit->velocity = ResultSpeedVector(unit->velocity, velocity);
+                updateForCollision(unit->position, unit->velocity);
+                orders[unit->id] = std::move(order);
+                continue;
+            }
+        }
 
         model::UnitOrder order(*unit);
         if (point_look_to) {
             order.targetDirection = *point_look_to - unit->position;
-            const double prev_direction = unit->direction.toRadians();
             unit->direction = applyNewDirection(unit->direction, order.targetDirection,
                                                 rotationSpeed(unit->aim, unit->weapon));
         }
@@ -202,7 +347,7 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
                                                CalcAimSpeedModifier(*unit));
             order.targetVelocity = vector;
             unit->velocity = ResultSpeedVector(unit->velocity, vector);
-            updateForCollision(*unit);
+            updateForCollision(unit->position, unit->velocity);
         }
 
 //        for (const auto &target: kMoveDirections) {

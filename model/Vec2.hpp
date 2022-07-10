@@ -28,7 +28,6 @@ public:
 
     // Get string representation of Vec2
     std::string toString() const;
-
     Vec2 operator+(const Vec2 &second) const {
         return {this->x + second.x, this->y + second.y};
     }
@@ -59,6 +58,10 @@ public:
         return *this;
     }
 
+    Vec2 operator-() {
+        return {-x, -y};
+    }
+
     Vec2 &toLen(const double val) {
         const double norm = this->norm();
         this->x *= val / norm;
@@ -69,6 +72,10 @@ public:
     Vec2 toLen(const double val) const {
         const double norm = this->norm();
         return {this->x * val / norm, this->y * val / norm};
+    }
+
+    Vec2 &LimitLength(const double val) {
+        return sqrNorm() > val * val ? toLen(val) : *this;
     }
 
     double norm() const {

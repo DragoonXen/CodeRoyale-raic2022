@@ -61,6 +61,37 @@ GetClosestCollision(Vec2 start, Vec2 finish, const double addRadius, std::option
     return {closest_obstacle, point};
 }
 
+inline double CalcResultAim(bool keep, double start, const std::optional<int>& weapon) {
+    DRAW(
+        if (keep && !weapon) {
+            std::cerr << "wrong state" << std::endl;
+            exit(0);
+        }
+    );
+    if (keep) {
+        return std::min(1., start + Constants::INSTANCE.weapons[*weapon].aimPerTick);
+    } else {
+        return std::max(0., start - Constants::INSTANCE.weapons[*weapon].aimPerTick);
+    }
+}
+
+inline bool
+IsCollide(Vec2 position, Vec2 velocity, Vec2 position2, Vec2 velocity2, const double time,
+          const double collisionRadius) {
+    velocity2 -= velocity;
+    Vec2 position2End = position2 + velocity2 * time;
+    return (SegmentClosestPoint(position, position2, position2End) - position).sqrNorm() < sqr(collisionRadius);
+}
+
+inline void ApplyDamage(Unit& unit, double incomingDamage, int tick) {
+    if (incomingDamage - 1e-6 > unit.shield) {
+        incomingDamage -= unit.shield;
+        unit.shield = 0;
+        unit.healthRegenerationStartTick = tick + Constants::INSTANCE.healthRegenerationDelayTicks;
+    }
+    unit.health -= incomingDamage;
+}
+
 //bool IsPointVisible(const std::vector<Unit*>& my_units, Vec2 point) {
 //
 //}

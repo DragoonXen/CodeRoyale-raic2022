@@ -19,6 +19,7 @@ public:
     double spread;
     // Aiming time
     double aimTime;
+    double aimPerTick;
     // Field of view in full aim (in degrees)
     double aimFieldOfView;
     // Rotation speed in full aim (degrees per second)
