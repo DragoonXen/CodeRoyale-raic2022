@@ -36,11 +36,6 @@ private:
     TcpStream* stream;
 };
 
-template<typename T>
-void Draw(const T function) {
-    function();
-}
-
 #include <sstream>
 
 
@@ -54,9 +49,22 @@ std::string to_string_p(const T a_value, const int n = 6)
 }
 
 #ifdef DEBUG_INFO
-#define DRAW(a) Draw(([&](){auto debugInterface = DebugInterface::INSTANCE;a}))
-#else
-#define DRAW(a) Draw(nullptr)
-#endif
 
+template<typename T>
+void Draw(char key, const T function) {
+    if (!debugging::DebugState::Enabled(key)) return;
+    function();
+}
+template<typename T>
+void Draw(const T function) {
+    function();
+}
+#define DRAW(a) Draw(([&](){auto debugInterface = DebugInterface::INSTANCE;a}))
+#define DRAWK(key,lambda) Draw(key,([&](){auto debugInterface = DebugInterface::INSTANCE;lambda}))
+#else
+void Draw() {
+}
+#define DRAW(a) Draw()
+#define DRAWK(key, lambda) Draw()
+#endif
 #endif

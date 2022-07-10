@@ -4,6 +4,11 @@ namespace debugging {
 
 DebugState::DebugState(std::vector<std::string> pressedKeys, model::Vec2 cursorWorldPosition, std::optional<int> lockedUnit, debugging::Camera camera) : pressedKeys(pressedKeys), cursorWorldPosition(cursorWorldPosition), lockedUnit(lockedUnit), camera(camera) { }
 
+#ifdef DEBUG_INFO
+    std::unordered_set<char> DebugState::enabledKeys;
+    std::unordered_set<char> DebugState::lastTickKeys;
+#endif
+
 // Read DebugState from input stream
 DebugState DebugState::readFrom(InputStream& stream) {
     std::vector<std::string> pressedKeys = std::vector<std::string>();
@@ -20,6 +25,9 @@ DebugState DebugState::readFrom(InputStream& stream) {
         lockedUnit.emplace(lockedUnitValue);
     }
     debugging::Camera camera = debugging::Camera::readFrom(stream);
+#ifdef DEBUG_INFO
+    DebugState::processKeys(pressedKeys);
+#endif
     return DebugState(pressedKeys, cursorWorldPosition, lockedUnit, camera);
 }
 

@@ -9,6 +9,7 @@ if(WIN32)
 endif()
 
 add_definitions(-DDEBUG_INFO)
+add_definitions(-DTIMING_ENABLED)
 
 set(HEADERS
     "DebugInterface.hpp"

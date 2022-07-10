@@ -1,5 +1,6 @@
 #include "MyStrategy.hpp"
 #include "utils/Movement.hpp"
+#include "utils/TimeMeasure.hpp"
 #include <exception>
 #include <iostream>
 #include <algorithm>
@@ -175,11 +176,14 @@ namespace {
 }
 
 MyStrategy::MyStrategy(const model::Constants &constants) {
+    TimeMeasure::start();
     Constants::INSTANCE = constants;
     Constants::INSTANCE.Update();
+    TimeMeasure::end(0);
 }
 
 model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *debugInterface) {
+    TimeMeasure::start();
     DebugInterface::INSTANCE = debugInterface;
     Game game = game_base;
 //    std::cerr << game.currentTick << std::endl;
@@ -202,6 +206,7 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
     auto enemy_units = filterUnits(game.units, enemies_filter);
 
     UpdateProjectiles(game, last_tick_game);
+    TimeMeasure::end(1);
 
     double closest_enemy_dst = std::numeric_limits<double>::max();
     const Unit *enemy_to_attack = nullptr;
@@ -259,14 +264,14 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
 
     std::unordered_map<int, model::UnitOrder> orders;
     for (const auto &unit: my_units) {
-//        DRAW(
-//                if (point_move_to) {
-//                    debugInterface->addSegment(unit->position, *point_move_to, 0.1, debugging::Color(1., 0., 0., 1.));
-//                }
-//                if (point_look_to) {
-//                    debugInterface->addSegment(unit->position, *point_look_to, 0.1, debugging::Color(0., 1., 0., 1.));
-//                }
-//        );
+        DRAWK('O', {
+            if (point_move_to) {
+                debugInterface->addSegment(unit->position, *point_move_to, 0.1, debugging::Color(1., 0., 0., 1.));
+            }
+            if (point_look_to) {
+                debugInterface->addSegment(unit->position, *point_look_to, 0.1, debugging::Color(0., 1., 0., 1.));
+            }
+        });
 //        DRAW(
 //                if (&unit != my_units.data()) {
 //                    for (double i = unit->position.x - 30; i < unit->position.x + 31; i += 1) {
