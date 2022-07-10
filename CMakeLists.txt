@@ -43,7 +43,8 @@ set(HEADERS
     "model/WeaponProperties.hpp"
     "model/Zone.hpp"
     "utils/Movement.hpp"
-    "utils/Util.hpp")
+    "utils/Util.hpp"
+    "utils/Simulation.hpp")
 set (SRC
     "DebugInterface.cpp"
     "MyStrategy.cpp"
