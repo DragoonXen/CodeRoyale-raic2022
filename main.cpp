@@ -3,6 +3,7 @@
 #include "TcpStream.hpp"
 #include "codegame/ServerMessage.hpp"
 #include "codegame/ClientMessage.hpp"
+#include "utils/TimeMeasure.hpp"
 #include <memory>
 #include <string>
 
@@ -28,6 +29,7 @@ public:
                 codegame::ClientMessage::OrderMessage(myStrategy->getOrder(getOrderMessage->playerView, getOrderMessage->debugAvailable ? &debugInterface : nullptr)).writeTo(tcpStream);
                 tcpStream.flush();
             } else if (auto finishMessage = std::dynamic_pointer_cast<codegame::ServerMessage::Finish>(message)) {
+                TimeMeasure::printTimings();
                 myStrategy->finish();
                 break;
             } else if (auto debugUpdateMessage = std::dynamic_pointer_cast<codegame::ServerMessage::DebugUpdate>(message)) {
@@ -35,6 +37,7 @@ public:
                 codegame::ClientMessage::DebugUpdateDone().writeTo(tcpStream);
                 tcpStream.flush();
             } else {
+                TimeMeasure::printTimings();
                 throw std::runtime_error("Unexpected server message");
             }
         }

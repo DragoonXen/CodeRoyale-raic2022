@@ -12,8 +12,14 @@
 
 namespace TimeMeasure {
 #ifdef TIMING_ENABLED
-    const int maxT = 11;
-    static long timings[maxT] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    const int kMaxT = 11;
+    static std::array<long, kMaxT> timings = []() {
+        std::array<long, kMaxT> res = {};
+        for (size_t i = 0; i != kMaxT; ++i) {
+            res[i] = 0;
+        }
+        return res;
+    }();
 
     static std::clock_t startTime;
 
@@ -27,10 +33,11 @@ namespace TimeMeasure {
     }
 
     inline static void printTimings() {
-        for (int i = 0; i != maxT; ++i) {
-            std::cout << timings[i] << " ";
+        std::stringstream sstr;
+        for (int i = 0; i != kMaxT; ++i) {
+            sstr << timings[i] << " ";
         }
-        std::cout << std::endl;
+        std::cerr << sstr.str() << std::endl;
     }
 
 #else

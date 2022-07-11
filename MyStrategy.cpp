@@ -39,23 +39,11 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
     TimeMeasure::start();
     DebugInterface::INSTANCE = debugInterface;
     Game game = game_base;
-    for (auto &unit: game.units) {
-        DRAW(
-                debugInterface->addPlacedText(unit.position + model::Vec2{1., 1.},
-                                              "unit " + std::to_string(unit.id) + "\n" + to_string_p(unit.shield, 1) +
-                                              "|" + to_string_p(unit.health, 1) + "\n" +
-                                              to_string_p(unit.position.x, 2) + "|" + to_string_p(unit.position.y, 2),
-                                              {0., 1.}, 0.7,
-                                              debugging::Color(0, 0, 0, 1));
-        );
-    }
-
 
     const auto my_units_filter = [id = game.myId](const auto &unit) { return unit.playerId == id; };
     const auto enemies_filter = [id = game.myId](const auto &unit) { return unit.playerId != id; };
 
     auto my_units = filterUnits(game.units, my_units_filter);
-    auto enemy_units = filterUnits(game.units, enemies_filter);
 
     std::unordered_map<int, VisibleFilter> filters;
     for (const auto unit : my_units) {
@@ -63,9 +51,28 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
         filters[unit->id] = FilterObstacles(unit->position, unit->direction, unit->currentFieldOfView);
     }
 
-    UpdateProjectiles(game, last_tick_game, my_units, filters);
-    UpdateLoot(game, last_tick_game, my_units, filters);
     TimeMeasure::end(1);
+    UpdateProjectiles(game, last_tick_game, my_units, filters);
+    TimeMeasure::end(2);
+    UpdateLoot(game, last_tick_game, my_units, filters);
+    TimeMeasure::end(3);
+    UpdateUnits(game, last_tick_game, my_units, filters);
+    TimeMeasure::end(4);
+    my_units = filterUnits(game.units, my_units_filter);
+    auto enemy_units = filterUnits(game.units, enemies_filter);
+
+    DRAW({
+             for (auto &unit: game.units) {
+                 debugInterface->addPlacedText(unit.position + model::Vec2{1., 1.},
+                                               "unit " + std::to_string(unit.id) + "\n" +
+                                               to_string_p(unit.shield, 1) +
+                                               "|" + to_string_p(unit.health, 1) + "\n" +
+                                               to_string_p(unit.position.x, 2) + "|" +
+                                               to_string_p(unit.position.y, 2),
+                                               {0., 1.}, 0.7,
+                                               debugging::Color(0, 0, 0, 1));
+             }
+         });
 
     double closest_enemy_dst = std::numeric_limits<double>::max();
     const Unit *enemy_to_attack = nullptr;
@@ -98,7 +105,7 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
         }
     }
 
-    if (last_tick_game) {
+    if (last_tick_game && debugInterface != nullptr) {
         auto my_units_last_tick = filterUnits(last_tick_game->units, my_units_filter);
         for (const auto &unit: my_units) {
             const auto old_unit = [unit, &my_units_last_tick]() -> Unit * {
@@ -210,9 +217,11 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
         orders[unit->id] = std::move(order);
     }
 
+
     this->last_tick_game = std::move(game);
 
     DRAW(debugInterface->flush(););
+    TimeMeasure::end(10);
     return model::Order(std::move(orders));
 }
 
@@ -232,4 +241,5 @@ void MyStrategy::debugUpdate(DebugInterface &debugInterface) {
     );
 }
 
-void MyStrategy::finish() {}
+void MyStrategy::finish() {
+}

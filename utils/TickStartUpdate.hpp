@@ -14,6 +14,9 @@
 
 namespace {
     using namespace model;
+
+    int kLootExpiration = 30 * 30;
+    int kUnitExpiration = 30 * 10;
 }
 
 void UpdateLifetime(Projectile &projectile) {
@@ -93,6 +96,9 @@ void UpdateLoot(Game &game, std::optional<Game> &last_tick, const std::vector<Un
     const Constants &constants = Constants::INSTANCE;
     if (last_tick) {
         for (auto &loot: last_tick->loot) {
+            if (loot.lastSeenTick + kLootExpiration > game.currentTick) {
+                continue;
+            }
             from_prev_tick[loot.id] = &loot;
         }
     }
@@ -123,6 +129,42 @@ void UpdateLoot(Game &game, std::optional<Game> &last_tick, const std::vector<Un
                                               debugging::Color(0, 0, 0, 1));
             }
     );
+}
+
+void UpdateUnits(Game &game, std::optional<Game> &last_tick, const std::vector<Unit *> &units,
+                 const std::unordered_map<int, VisibleFilter> &filters) {
+    std::unordered_map<int, Unit *> from_prev_tick;
+    const Constants &constants = Constants::INSTANCE;
+    if (last_tick) {
+        for (auto &unit: last_tick->units) {
+            if (unit.lastSeenTick + kUnitExpiration > game.currentTick) {
+                continue;
+            }
+            from_prev_tick[unit.id] = &unit;
+        }
+    }
+
+    for (auto &unit: game.units) {
+        if (from_prev_tick.count(unit.id)) {
+            from_prev_tick.erase(unit.id);
+        }
+        unit.lastSeenTick = game.currentTick;
+    }
+    if (last_tick) {
+        std::vector<Unit*> unitsToAdd;
+        for (auto &unit: last_tick->units) {
+            if (!from_prev_tick.count(unit.id)) {
+                continue;
+            }
+            if (!IsVisible<kVisibilityFilter>(unit.position, units, filters)) {
+                DRAW(debugInterface->addCircle(unit.position, 1.3, debugging::Color(0., 1., 0., .3)););
+                unitsToAdd.push_back(&unit);
+            }
+        }
+        for (auto unit: unitsToAdd) {
+            game.units.push_back(*unit);
+        }
+    }
 }
 
 #endif //AI_CUP_22_TICKSTARTUPDATE_HPP

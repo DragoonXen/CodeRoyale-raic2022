@@ -46,7 +46,8 @@ set(HEADERS
     "utils/Simulation.hpp"
     "utils/TickStartUpdate.hpp"
     "utils/Visible.hpp"
-    "utils/TickStartUpdate.hpp")
+    "utils/TickStartUpdate.hpp"
+    "utils/Task.h")
 set (SRC
     "DebugInterface.cpp"
     "MyStrategy.cpp"
