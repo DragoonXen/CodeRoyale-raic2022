@@ -19,7 +19,7 @@ const std::vector<Vec2> kMoveDirections = []() {
     const double angleStep = M_PI * 2 / stepCount;
     for (size_t i = 0; i != stepCount; ++i) {
         const double currAngle = i * angleStep;
-        result[i] = {std::cos(currAngle), std::sin(currAngle)};
+        result[i] = Vec2(currAngle);
     }
     return result;
 }();
@@ -96,19 +96,14 @@ inline double rotationSpeed(double aim, const std::optional<int>& weapon) {
 
 inline Vec2 applyNewDirection(Vec2 currentDirection, Vec2 targetDirection, const double rotation_speed) {
     double curr_angle = currentDirection.toRadians();
-    double angle_diff = targetDirection.toRadians() - curr_angle;
-    if (angle_diff > M_PI) {
-        angle_diff -= M_PI * 2.;
-    } else if (angle_diff < -M_PI) {
-        angle_diff += M_PI * 2.;
-    }
+    double angle_diff = AngleDiff(targetDirection.toRadians(), curr_angle);
     const double diff_abs = abs(angle_diff);
     if (diff_abs > rotation_speed) {
         angle_diff *= rotation_speed / diff_abs;
     }
     curr_angle += angle_diff;
 
-    return {std::cos(curr_angle), std::sin(curr_angle)};
+    return {curr_angle};
 }
 
 inline void updateForCollision(Vec2& position, Vec2& velocity) {

@@ -24,6 +24,8 @@ public:
     // Amount of ammo
     int amount;
 
+    int lastSeenTick;
+
     Loot(int id, model::Vec2 position, int tag, int weaponTypeIndex, int amount);
 
     // Read Loot from input stream

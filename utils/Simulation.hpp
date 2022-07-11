@@ -4,7 +4,7 @@
 
 #include <tuple>
 #include "model/Unit.hpp"
-#include "model/Projectile.hpp."
+#include "model/Projectile.hpp"
 #include "model/Game.hpp"
 #include "model/Constants.hpp"
 #include "Movement.hpp"

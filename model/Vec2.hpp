@@ -20,6 +20,11 @@ public:
 
     Vec2(double x, double y);
 
+    Vec2(double angle) {
+        this->x = std::cos(angle);
+        this->y = std::sin(angle);
+    }
+
     // Read Vec2 from input stream
     static Vec2 readFrom(InputStream& stream);
 

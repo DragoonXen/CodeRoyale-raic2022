@@ -18,7 +18,7 @@ namespace {
 template<typename T>
 T sqr(T value) { return value * value; }
 
-Vec2 SegmentClosestPoint(Vec2 point, Vec2 segmentStart, Vec2 segmentEnd) {
+inline Vec2 SegmentClosestPoint(Vec2 point, Vec2 segmentStart, Vec2 segmentEnd) {
     Vec2 v = segmentEnd - segmentStart;
     Vec2 w = point - segmentStart;
 
@@ -32,6 +32,14 @@ Vec2 SegmentClosestPoint(Vec2 point, Vec2 segmentStart, Vec2 segmentEnd) {
     }
     double b = c1 / c2;
     return segmentStart + v * b;
+}
+
+inline double SegmentPointSqrDist(Vec2 point, Vec2 segmentStart, Vec2 segmentEnd) {
+    return (SegmentClosestPoint(point, segmentStart, segmentEnd) - point).sqrNorm();
+}
+
+inline double SegmentPointDist(Vec2 point, Vec2 segmentStart, Vec2 segmentEnd) {
+    return (SegmentClosestPoint(point, segmentStart, segmentEnd) - point).norm();
 }
 
 template<bool shoot_passable = false>
@@ -73,6 +81,16 @@ inline double CalcResultAim(bool keep, double start, const std::optional<int>& w
     } else {
         return std::max(0., start - Constants::INSTANCE.weapons[*weapon].aimPerTick);
     }
+}
+
+inline double AngleDiff(double first, double second) {
+    double angleDiff = first - second;
+    if (angleDiff > M_PI) {
+        angleDiff -= M_PI * 2.;
+    } else if (angleDiff < -M_PI) {
+        angleDiff += M_PI * 2.;
+    }
+    return angleDiff;
 }
 
 inline bool

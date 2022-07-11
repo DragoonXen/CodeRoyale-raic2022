@@ -2,7 +2,8 @@
 #include "utils/Movement.hpp"
 #include "utils/TimeMeasure.hpp"
 #include "utils/Simulation.hpp"
-#include "utils/TickStartUpdate.h"
+#include "utils/TickStartUpdate.hpp"
+#include "utils/Visible.hpp"
 #include <exception>
 #include <iostream>
 #include <algorithm>
@@ -56,7 +57,14 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
     auto my_units = filterUnits(game.units, my_units_filter);
     auto enemy_units = filterUnits(game.units, enemies_filter);
 
-    UpdateProjectiles(game, last_tick_game);
+    std::unordered_map<int, VisibleFilter> filters;
+    for (const auto unit : my_units) {
+        unit->currentFieldOfView = FieldOfView(*unit);
+        filters[unit->id] = FilterObstacles(unit->position, unit->direction, unit->currentFieldOfView);
+    }
+
+    UpdateProjectiles(game, last_tick_game, my_units, filters);
+    UpdateLoot(game, last_tick_game, my_units, filters);
     TimeMeasure::end(1);
 
     double closest_enemy_dst = std::numeric_limits<double>::max();
@@ -208,6 +216,20 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
     return model::Order(std::move(orders));
 }
 
-void MyStrategy::debugUpdate(DebugInterface &debugInterface) {}
+void MyStrategy::debugUpdate(DebugInterface &debugInterface) {
+    DRAW(
+            static bool drawed = false;
+            if (drawed) {
+                return;
+            }
+            for (const auto &obstacle: Constants::INSTANCE.obstacles) {
+                debugInterface->addPlacedText(obstacle.position,
+                                              "o " + std::to_string(obstacle.id),
+                                              {0.5, 0.5}, 0.7,
+                                              debugging::Color(0, 0, 0, 1));
+            }
+            drawed = true;
+    );
+}
 
 void MyStrategy::finish() {}
