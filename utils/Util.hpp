@@ -113,7 +113,7 @@ inline void ApplyDamage(Unit& unit, double incomingDamage, int tick) {
 #ifdef DEBUG_INFO
 #define VERIFY(a, b) {if (!(a)){std::cerr << (b) << std::endl; getchar();exit(-1);}}
 #else
-#define VERIFY(a, b) ()
+#define VERIFY(a, b) (1==1)
 #endif
 
 #endif //AI_CUP_22_UTIL_HPP

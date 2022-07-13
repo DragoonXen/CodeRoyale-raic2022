@@ -31,11 +31,15 @@ namespace {
     const double kAcceptableAdditionalDistance = 10.;
 }
 
-std::vector<OrderType> ApplyAttackTask(const Unit& unit, const Unit& target, const int currentTick, POrder& order) {
+std::vector<OrderType>
+ApplyAttackTask(const Unit &unit, const Unit &target, const int currentTick, std::unordered_map<int, VisibleFilter> &visibilityFilters,
+                POrder &order) {
     const Constants& constants = Constants::INSTANCE;
     double velocity = target.velocity.norm();
     const double totalVelocity = velocity + std::max(0., velocity - 1.) + std::max(0., velocity - 2.);
-    Vec2 aimTarget = target.position + target.velocity.toLen(totalVelocity) * constants.tickTime;
+    Vec2 aimTarget = target.position +
+                     (velocity > 1e-5 ? target.velocity.toLen(totalVelocity) * constants.tickTime : target.direction *
+                                                                                                    0.3);
 
     const double angleDiff = AngleDiff(unit.direction.toRadians(), (aimTarget - unit.position).toRadians());
     const double angleDiffAbs = std::abs(angleDiff);
@@ -47,11 +51,13 @@ std::vector<OrderType> ApplyAttackTask(const Unit& unit, const Unit& target, con
     const double ticksToRotate = angleDiffAbs / rotateSpeed;
 
     // how many ticks until next shot
-    int ticksToPossibleShot = unit.nextShotTick - currentTick;
+     int ticksToPossibleShot = unit.nextShotTick - currentTick;
     if (ticksToRotate < 1 && unit.aim + 1e-5 > 1 && ticksToPossibleShot <= 0 &&
         acceptableWeaponDistance > currentDistance) {
         order.lookPoint = aimTarget;
-        order.action = std::make_shared<ActionOrder::Aim>(true);
+        const auto &myFilter = visibilityFilters[unit.id];
+        bool shoot = IsVisible<VisionFilter::kShootFilter>(unit.position, unit.direction, 100., aimTarget, myFilter);
+        order.action = std::make_shared<ActionOrder::Aim>(shoot);
         order.aim = true;
         return {OrderType::kRotate, OrderType::kAction};
     }

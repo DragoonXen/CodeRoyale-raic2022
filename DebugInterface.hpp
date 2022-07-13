@@ -59,10 +59,10 @@ template<typename T>
 void Draw(const T function) {
     function();
 }
-#define DRAW(a) Draw(([&](){auto debugInterface = DebugInterface::INSTANCE;a}))
-#define DRAWK(key,lambda) Draw(key,([&](){auto debugInterface = DebugInterface::INSTANCE;lambda}))
+#define DRAW(a) Draw(([&](){auto debugInterface = DebugInterface::INSTANCE;if (debugInterface == nullptr) return;a}))
+#define DRAWK(key, lambda) Draw(key,([&](){auto debugInterface = DebugInterface::INSTANCE;if (debugInterface == nullptr) return;lambda}))
 #else
-void Draw() {
+inline void Draw() {
 }
 #define DRAW(a) Draw()
 #define DRAWK(key, lambda) Draw()

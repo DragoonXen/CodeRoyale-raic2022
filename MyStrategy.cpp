@@ -158,14 +158,15 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
             if (!unit->weapon.has_value() || unit->ammo[*unit->weapon] == 0) {
                 continue;
             }
-            std::vector<std::pair<double, int>> distances(enemyUnits.size());
+             std::vector<std::pair<double, int>> distances;
+            distances.reserve(enemyUnits.size());
             for (size_t i = 0; i != enemyUnits.size(); ++i) {
                 const auto& enUnit = enemyUnits[i];
                 distances.emplace_back(std::make_pair((unit->position - enUnit->position).sqrNorm(), i));
             }
             std::sort(distances.begin(), distances.end());
             for (const auto& item : distances) {
-                const auto& enUnit = enemyUnits[item.second];
+                 const auto& enUnit = enemyUnits[item.second];
                 Task attackTask{0, unit->id,
                                 std::to_string(unit->id) + " attack enemy " + std::to_string(enUnit->id),
                                 {OrderType::kAction, OrderType::kRotate}};
@@ -175,14 +176,11 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
                                                            enUnit->position, visibilityFilters[unit->id])) {
                     attackTask.score /= 10.;
                 }
-                if (!IsReachable(unit->position, enUnit->position, visibilityFilters[unit->id])) {
-                    attackTask.score /= 10.;
-                }
                 if (enUnit->shield + enUnit->health < constants.weapons[*unit->weapon].projectileDamage + 1e-5) {
                     attackTask.score *= 100.;
                 }
-                attackTask.func = [unit, enUnit, tick = game.currentTick](POrder &order) -> std::vector<OrderType> {
-                    return ApplyAttackTask(*unit, *enUnit, tick, order);
+                attackTask.func = [unit, enUnit, tick = game.currentTick, &visibilityFilters](POrder &order) -> std::vector<OrderType> {
+                    return ApplyAttackTask(*unit, *enUnit, tick, visibilityFilters, order);
                 };
                 tasks.push(attackTask);
 
@@ -190,6 +188,9 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
                               std::to_string(unit->id) + " move to attack enemy " + std::to_string(enUnit->id),
                               {OrderType::kMove}};
                 moveTask.score = attackTask.score;
+                if (!IsReachable(unit->position, enUnit->position, visibilityFilters[unit->id])) {
+                    moveTask.score /= 10.;
+                }
                 moveTask.func = [unit, enUnit, &visibilityFilters](POrder &order) -> std::vector<OrderType> {
                     return ApplyMoveToUnitTask(*unit, *enUnit, visibilityFilters, order);
                 };

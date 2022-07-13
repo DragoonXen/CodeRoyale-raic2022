@@ -33,13 +33,12 @@ public:
             if (auto updateConstantsMessage = std::dynamic_pointer_cast<codegame::ServerMessage::UpdateConstants>(message)) {
                 myStrategy.reset(new MyStrategy(updateConstantsMessage->constants));
             } else if (auto getOrderMessage = std::dynamic_pointer_cast<codegame::ServerMessage::GetOrder>(message)) {
-                codegame::ClientMessage::OrderMessage(myStrategy->getOrder(getOrderMessage->playerView, getOrderMessage->debugAvailable ? &debugInterface : nullptr)).writeTo(tcpStream);
-                tcpStream.flush();
 #ifdef TICK_DEBUG_ENABLED
                 messages.push_back(*getOrderMessage);
                 memory.emplace_back(*myStrategy);
 #endif
-
+                codegame::ClientMessage::OrderMessage(myStrategy->getOrder(getOrderMessage->playerView, getOrderMessage->debugAvailable ? &debugInterface : nullptr)).writeTo(tcpStream);
+                tcpStream.flush();
             } else if (auto finishMessage = std::dynamic_pointer_cast<codegame::ServerMessage::Finish>(message)) {
                 TimeMeasure::printTimings();
                 myStrategy->finish();
@@ -70,7 +69,7 @@ public:
             auto message = messages[tickNo];
             auto tickStrategy = memory[tickNo];
             try {
-                tickStrategy.getOrder(message.playerView, message.debugAvailable ? &debugInterface : nullptr);
+                tickStrategy.getOrder(message.playerView, nullptr);
             } catch (...) {
             }
         }

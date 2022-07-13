@@ -93,10 +93,10 @@ void UpdateProjectiles(Game &game, std::optional<Game> &last_tick, const std::ve
 void UpdateLoot(Game &game, std::optional<Game> &last_tick, const std::vector<Unit *> &units,
                 const std::unordered_map<int, VisibleFilter> &filters) {
     std::unordered_map<int, Loot *> from_prev_tick;
-    const Constants &constants = Constants::INSTANCE;
+     const Constants &constants = Constants::INSTANCE;
     if (last_tick) {
         for (auto &loot: last_tick->loot) {
-            if (loot.lastSeenTick + kLootExpiration > game.currentTick) {
+            if (loot.lastSeenTick + kLootExpiration < game.currentTick) {
                 continue;
             }
             from_prev_tick[loot.id] = &loot;
@@ -137,7 +137,7 @@ void UpdateUnits(Game &game, std::optional<Game> &last_tick, const std::vector<U
     const Constants &constants = Constants::INSTANCE;
     if (last_tick) {
         for (auto &unit: last_tick->units) {
-            if (unit.lastSeenTick + kUnitExpiration > game.currentTick) {
+            if (unit.lastSeenTick + kUnitExpiration < game.currentTick) {
                 continue;
             }
             from_prev_tick[unit.id] = &unit;
