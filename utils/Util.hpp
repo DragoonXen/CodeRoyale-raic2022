@@ -110,6 +110,28 @@ inline void ApplyDamage(Unit& unit, double incomingDamage, int tick) {
     unit.health -= incomingDamage;
 }
 
+struct ZoneMover {
+    Zone zone;
+
+    ZoneMover(const Zone &zone) : zone(zone) {};
+
+    void nextTick() {
+        if (zone.currentRadius <= zone.nextRadius) {
+            zone.currentRadius -= Constants::INSTANCE.zoneSpeedPerTick;
+            return;
+        }
+        size_t tickToReach = round((zone.currentRadius - zone.nextRadius) / Constants::INSTANCE.zoneSpeedPerTick);
+        zone.currentCenter += (zone.nextCenter - zone.currentCenter) * (1. / tickToReach);
+        zone.currentRadius -= Constants::INSTANCE.zoneSpeedPerTick;
+    }
+
+    inline bool IsTouchingZone(const Unit &unit) {
+        return (unit.position - zone.currentCenter).norm() + Constants::INSTANCE.unitRadius > zone.currentRadius;
+    }
+};
+
+
+
 #ifdef DEBUG_INFO
 #define VERIFY(a, b) {if (!(a)){std::cerr << (b) << std::endl; getchar();exit(-1);}}
 #else

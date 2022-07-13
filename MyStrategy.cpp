@@ -39,6 +39,11 @@ MyStrategy::MyStrategy(const model::Constants &constants) {
 }
 
 model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *debugInterface) {
+#ifdef DEBUG_INFO
+    if (game_base.currentTick == 0) {
+        debugging::DebugState::processKeys({"I"});
+    }
+#endif
     TimeMeasure::start();
     const auto& constants = Constants::INSTANCE;
     DebugInterface::INSTANCE = debugInterface;
@@ -93,36 +98,36 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
                 this->point_move_to.reset();
             }
         }
+    }
 #ifdef DEBUG_INFO
-        if (last_tick_game) {
-            auto my_units_last_tick = filterUnits(last_tick_game->units, my_units_filter);
-            for (const auto &unit: myUnits) {
-                const auto old_unit = [unit, &my_units_last_tick]() -> Unit * {
-                    for (const auto &old_unit: my_units_last_tick) {
-                        if (old_unit->id == unit->id) {
-                            return old_unit;
-                        }
+    if (last_tick_game) {
+        auto my_units_last_tick = filterUnits(last_tick_game->units, my_units_filter);
+        for (const auto &unit: myUnits) {
+            const auto old_unit = [unit, &my_units_last_tick]() -> Unit * {
+                for (const auto &old_unit: my_units_last_tick) {
+                    if (old_unit->id == unit->id) {
+                        return old_unit;
                     }
-                    return nullptr;
-                }();
-                if ((old_unit->position - unit->position).norm() > 1e-10) {
-                    std::cerr << game.currentTick << " pos expected " << old_unit->position.toString() << " actual "
-                              << unit->position.toString() << " diff " << (old_unit->position - unit->position).norm()
-                              << std::endl;
-                    std::cerr << game.currentTick << " vel expected " << old_unit->velocity.toString() << "|"
-                              << old_unit->velocity.norm() << " actual "
-                              << unit->velocity.toString() << "|"
-                              << unit->velocity.norm() << " actual " << " diff "
-                            << (old_unit->velocity - unit->velocity).norm() << " angle diff "
-                            << old_unit->velocity.toRadians() - unit->velocity.toRadians()
-                            << std::endl;
-                    std::cerr << game.currentTick << " aim expected " << std::to_string(old_unit->aim) << " actual "
-                              << std::to_string(unit->aim) << std::endl;
                 }
+                return nullptr;
+            }();
+            if ((old_unit->position - unit->position).norm() > 1e-10) {
+                std::cerr << game.currentTick << " pos expected " << old_unit->position.toString() << " actual "
+                          << unit->position.toString() << " diff " << (old_unit->position - unit->position).norm()
+                          << std::endl;
+                std::cerr << game.currentTick << " vel expected " << old_unit->velocity.toString() << "|"
+                          << old_unit->velocity.norm() << " actual "
+                          << unit->velocity.toString() << "|"
+                          << unit->velocity.norm() << " actual " << " diff "
+                          << (old_unit->velocity - unit->velocity).norm() << " angle diff "
+                          << old_unit->velocity.toRadians() - unit->velocity.toRadians()
+                          << std::endl;
+                std::cerr << game.currentTick << " aim expected " << std::to_string(old_unit->aim) << " actual "
+                          << std::to_string(unit->aim) << std::endl;
             }
         }
-#endif
     }
+#endif
 
     Vec2 centerPoint = {0., 0.};
     for (auto& unit : myUnits) {
@@ -279,29 +284,39 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
             order.action = pOrder.action;
 //            std::cerr << order.toString() << std::endl;
             orders[unit->id] = order;
+            usedAvoidRule.erase(unit->id);
             continue;
         }
         TimeMeasure::end(7);
         std::vector<MoveRule> basicRules = [&]() {
             std::vector<MoveRule> avoidRules;
-            Vec2 norm = {firstProjectile->velocity.y, -firstProjectile->velocity.x};
-            if ((unit->velocity - norm).sqrNorm() > (unit->velocity + norm).sqrNorm()) {
-                norm = -norm;
+            if (usedAvoidRule.count(unit->id)) {
+                avoidRules.push_back(usedAvoidRule[unit->id]);
+                avoidRules.back().keepAim = orderedRule.keepAim;
             }
             constexpr double kMoveLength = 30.;
-            avoidRules.push_back({unit->position + norm.toLen(kMoveLength), orderedRule.lookDirection, orderedRule.keepAim,
-                                  std::numeric_limits<double>::infinity()});
-            avoidRules.push_back({unit->position - norm.toLen(kMoveLength), orderedRule.lookDirection, orderedRule.keepAim,
-                                  std::numeric_limits<double>::infinity()});
+            if (firstProjectile != nullptr) {
+                Vec2 norm = {firstProjectile->velocity.y, -firstProjectile->velocity.x};
+                if ((unit->velocity - norm).sqrNorm() > (unit->velocity + norm).sqrNorm()) {
+                    norm = -norm;
+                }
+                avoidRules.push_back(
+                        {unit->position + norm.toLen(kMoveLength), orderedRule.lookDirection, orderedRule.keepAim,
+                         std::numeric_limits<double>::infinity()});
+                avoidRules.push_back(
+                        {unit->position - norm.toLen(kMoveLength), orderedRule.lookDirection, orderedRule.keepAim,
+                         std::numeric_limits<double>::infinity()});
+            }
             for (const auto &dir: kMoveDirections) {
-                avoidRules.push_back({unit->position + dir * kMoveLength, orderedRule.lookDirection, orderedRule.keepAim,
-                                      std::numeric_limits<double>::infinity()});
+                avoidRules.push_back(
+                        {unit->position + dir * kMoveLength, orderedRule.lookDirection, orderedRule.keepAim,
+                         std::numeric_limits<double>::infinity()});
             }
             return avoidRules;
         }();
 
         std::vector<ComplexMoveRule> complexRules;
-        for (const auto& rule : basicRules) {
+        for (const auto &rule: basicRules) {
             complexRules.emplace_back(ComplexMoveRule({{orderedRule, 1},
                                                        {{rule.moveDirection,
                                                                 rule.moveDirection,
@@ -326,10 +341,11 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
 
         auto [score, rule_id] = ChooseBest(*unit, game, complexRules);
         auto order = ApplyAvoidRule(*unit, complexRules[rule_id].storage.front());
-        if (rule_id < notApplyAimAboveId || !pOrder.aim) {
+        if (complexRules[rule_id].storage.front().keepAim == orderedRule.keepAim) {
             order.action = pOrder.action;
         }
         orders[unit->id] = order;
+        usedAvoidRule[unit->id] = complexRules[rule_id].storage.back();
         TimeMeasure::end(8);
     }
 

@@ -63,7 +63,7 @@ struct ComplexMoveRuleViewer {
 
 UnitOrder ApplyAvoidRule(Unit& unit, const MoveRule& selected_rule);
 
-std::tuple<Unit, double, const Projectile *>
+inline std::tuple<Unit, double, const Projectile *>
 Simulate(Unit unit, const Game &game, const ComplexMoveRule &moveRule, size_t deep = 20) {
     const auto &constants = Constants::INSTANCE;
     double damagePenalty = 0.;
@@ -74,19 +74,36 @@ Simulate(Unit unit, const Game &game, const ComplexMoveRule &moveRule, size_t de
         remained_projectiles[i] = &game.projectiles[i];
     }
     ComplexMoveRuleViewer ruleViewer{moveRule};
+    ZoneMover zoneMover{game.zone};
+    constexpr double damageExp = 1.001;
     for (size_t tick = 0; tick != deep; ++tick) {
         const auto& rule = ruleViewer.nextRule();
         const auto& moveDirection = rule.moveDirection;
         const auto& lookDirection = rule.lookDirection;
         const auto& keepAim = rule.keepAim;
         const auto& speedLimit = rule.speedLimit;
+        if (tick != 0) {
+            zoneMover.nextTick();
+        }
+        damagePenalty *= damageExp;
+        double damage = 0.;
+        if (zoneMover.IsTouchingZone(unit)) {
+            unit.health -= constants.zoneDamagePerTick;
+            damagePenalty += constants.zoneDamagePerTick;
+            if (unit.health < 1e-3) {
+                for (++tick; tick != deep; ++tick) {
+                    damagePenalty *= damageExp;
+                }
+                return {unit, damagePenalty, firstProjectile};
+            }
+        }
 
         last_position = unit.position;
         ApplyAvoidRule(unit, rule);
 
         const double tickTime = constants.tickTime;
         const double passedTime = tickTime * tick;
-        double damage = 0.;
+
         DRAWK('I',
               debugInterface->addCircle(unit.position, constants.unitRadius,
                                         damage == 0 ? debugging::Color(1., .7, 0., .1) :
@@ -114,8 +131,6 @@ Simulate(Unit unit, const Game &game, const ComplexMoveRule &moveRule, size_t de
             }
             damage += constants.weapons[projectile->weaponTypeIndex].projectileDamage;
         }
-        constexpr double damageExp = 1.001;
-        damagePenalty *= damageExp;
         damagePenalty += std::min(damage, unit.health + unit.shield);
         ApplyDamage(unit, damage, game.currentTick);
         if (unit.health < 1e-3) {
@@ -129,7 +144,8 @@ Simulate(Unit unit, const Game &game, const ComplexMoveRule &moveRule, size_t de
     return {unit, damagePenalty, firstProjectile};
 }
 
-std::tuple<double, size_t> ChooseBest(const Unit &unit, const Game &game, const std::vector<ComplexMoveRule> &rules) {
+inline std::tuple<double, size_t>
+ChooseBest(const Unit &unit, const Game &game, const std::vector<ComplexMoveRule> &rules) {
     double minScore = std::numeric_limits<double>::infinity();
     size_t best_id = 0;
     for (size_t id = 0; id != rules.size(); ++id) {

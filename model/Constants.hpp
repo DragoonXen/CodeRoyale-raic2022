@@ -32,8 +32,10 @@ public:
     double initialZoneRadius;
     // Speed of zone radius
     double zoneSpeed;
+    double zoneSpeedPerTick;
     // Damage dealt to units outside of the zone per second
     double zoneDamagePerSecond;
+    double zoneDamagePerTick;
     // Unit spawning time
     double spawnTime;
     // Damage dealt to units trying to spawn in incorrect position per second
@@ -129,6 +131,8 @@ public:
 
     void Update() {
         tickTime = 1. / ticksPerSecond;
+        zoneSpeedPerTick = zoneSpeed * tickTime;
+        zoneDamagePerTick = zoneDamagePerSecond * tickTime;
         healthRegenerationDelayTicks = (int)std::round(healthRegenerationDelay / tickTime);
         unitAccelerationPerTick = unitAcceleration / ticksPerSecond;
         unitMovementCircleShift = (maxUnitForwardSpeed - maxUnitBackwardSpeed) * .5;

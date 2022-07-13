@@ -46,6 +46,17 @@ public:
             } else if (auto debugUpdateMessage = std::dynamic_pointer_cast<codegame::ServerMessage::DebugUpdate>(message)) {
                 myStrategy->debugUpdate(debugInterface);
                 codegame::ClientMessage::DebugUpdateDone().writeTo(tcpStream);
+#ifdef TICK_DEBUG_ENABLED
+                int tickNo = -1;
+                if (tickNo > 0 && tickNo < (int) messages.size()) {
+                    auto message = messages[tickNo];
+                    auto tickStrategy = memory[tickNo];
+                    try {
+                        tickStrategy.getOrder(message.playerView, nullptr);
+                    } catch (...) {
+                    }
+                }
+#endif
                 tcpStream.flush();
             } else {
                 TimeMeasure::printTimings();

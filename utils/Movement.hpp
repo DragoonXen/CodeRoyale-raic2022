@@ -24,8 +24,8 @@ const std::vector<Vec2> kMoveDirections = []() {
     return result;
 }();
 
-Vec2 firstCollision(Vec2 position, Vec2 velocity, const double unit_radius, const Obstacle &obstacle,
-                    const double remaining_time) {
+inline Vec2 FirstCollision(Vec2 position, Vec2 velocity, const double unit_radius, const Obstacle &obstacle,
+                           const double remaining_time) {
     Vec2 end_point = position + velocity * remaining_time;
 
     const Vec2& coordsShift = obstacle.position;
@@ -63,7 +63,7 @@ inline double CalcAimSpeedModifier(const Unit& unit) {
                                  (1. - Constants::INSTANCE.weapons[*unit.weapon].aimMovementSpeedModifier) * unit.aim);
 }
 
-Vec2 MaxSpeedVector(Vec2 position, Vec2 direction, Vec2 target, const double aimModifier = 1) {
+inline Vec2 MaxSpeedVector(Vec2 position, Vec2 direction, Vec2 target, const double aimModifier = 1) {
     const Constants &constants = Constants::INSTANCE;
     const Vec2 coordsShift = position + direction * constants.unitMovementCircleShift;
     position -= coordsShift;
@@ -132,7 +132,7 @@ inline void updateForCollision(Vec2& position, Vec2& velocity) {
             return std::nullopt;
         }
         const Obstacle &obstacleRef = **obstacle;
-        const auto collision_point = firstCollision(position, velocity, constants.unitRadius, obstacleRef,
+        const auto collision_point = FirstCollision(position, velocity, constants.unitRadius, obstacleRef,
                                                     time_remained);
         DRAWK('M', {
             auto norm = (obstacleRef.position - collision_point).toLen(constants.unitRadius);
