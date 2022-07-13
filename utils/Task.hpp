@@ -27,36 +27,36 @@ struct POrder {
     model::Vec2 lookPoint;
     bool aim;
     std::optional<std::shared_ptr<model::ActionOrder>> action;
-    std::array<bool, (int)OrderType::kItemsCount> picked;
+    std::array<int, (int)OrderType::kItemsCount> picked;
 
     POrder() : aim(false) {
-        picked.fill(false);
+        picked.fill(-1);
     }
 
     bool IsAbleToAcceptTask(const std::vector<OrderType> &orderTypes) {
         for (auto &type: orderTypes) {
-            if (picked[(int) type]) {
+            if (picked[(int) type] >= 0) {
                 return false;
             }
         }
         return true;
     }
 
-    void Accept(const std::vector<OrderType> &orderTypes) {
+    void Accept(const std::vector<OrderType> &orderTypes, int ruleId) {
         for (auto &type: orderTypes) {
-            picked[(int) type] = true;
+            picked[(int) type] = ruleId;
         }
     }
 
     inline MoveRule toMoveRule() const {
         MoveRule result;
-        VERIFY(picked[(int) OrderType::kMove], "Move not set");
+        VERIFY(picked[(int) OrderType::kMove] >= 0, "Move not set");
         result.moveDirection = movePoint;
         result.speedLimit = maxMoveSpeed;
-        if (picked[(int) OrderType::kRotate]) {
+        if (picked[(int) OrderType::kRotate] >= 0) {
             result.lookDirection = lookPoint;
         }
-        result.keepAim = picked[(int) OrderType::kAction] && aim;
+        result.keepAim = picked[(int) OrderType::kAction] >= 0 && aim;
         return result;
     };
 };

@@ -21,6 +21,13 @@ public:
     {
         DebugInterface debugInterface(&tcpStream);
         std::shared_ptr<MyStrategy> myStrategy = std::shared_ptr<MyStrategy>();
+#ifdef TICK_DEBUG_ENABLED
+        std::vector<codegame::ServerMessage::GetOrder> messages;
+        std::vector<MyStrategy> memory;
+        messages.reserve(1000);
+        memory.reserve(1000);
+        try {
+#endif
         while (true) {
             auto message = codegame::ServerMessage::readFrom(tcpStream);
             if (auto updateConstantsMessage = std::dynamic_pointer_cast<codegame::ServerMessage::UpdateConstants>(message)) {
@@ -28,6 +35,11 @@ public:
             } else if (auto getOrderMessage = std::dynamic_pointer_cast<codegame::ServerMessage::GetOrder>(message)) {
                 codegame::ClientMessage::OrderMessage(myStrategy->getOrder(getOrderMessage->playerView, getOrderMessage->debugAvailable ? &debugInterface : nullptr)).writeTo(tcpStream);
                 tcpStream.flush();
+#ifdef TICK_DEBUG_ENABLED
+                messages.push_back(*getOrderMessage);
+                memory.emplace_back(*myStrategy);
+#endif
+
             } else if (auto finishMessage = std::dynamic_pointer_cast<codegame::ServerMessage::Finish>(message)) {
                 TimeMeasure::printTimings();
                 myStrategy->finish();
@@ -41,6 +53,28 @@ public:
                 throw std::runtime_error("Unexpected server message");
             }
         }
+#ifdef TICK_DEBUG_ENABLED
+        } catch (...) {
+        }
+        int tickNo;
+        while (true) {
+            std::cout << "Waiting for tick no to debug" << std::endl;
+            std::cin >> tickNo;
+            if (tickNo == -1) {
+                break;
+            }
+            if (tickNo < 0 || tickNo >= (int) messages.size()) {
+                std::cout << "out of bound, need up to " << std::to_string(messages.size()) << " exclusive" << std::endl;
+                continue;
+            }
+            auto message = messages[tickNo];
+            auto tickStrategy = memory[tickNo];
+            try {
+                tickStrategy.getOrder(message.playerView, message.debugAvailable ? &debugInterface : nullptr);
+            } catch (...) {
+            }
+        }
+#endif
     }
 
 private:

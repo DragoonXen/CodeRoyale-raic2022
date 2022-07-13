@@ -109,9 +109,15 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
                     std::cerr << game.currentTick << " pos expected " << old_unit->position.toString() << " actual "
                               << unit->position.toString() << " diff " << (old_unit->position - unit->position).norm()
                               << std::endl;
-                    std::cerr << game.currentTick << " vel expected " << old_unit->velocity.toString() << " actual "
-                              << unit->velocity.toString() << " diff " << (old_unit->velocity - unit->velocity).norm()
-                              << std::endl;
+                    std::cerr << game.currentTick << " vel expected " << old_unit->velocity.toString() << "|"
+                              << old_unit->velocity.norm() << " actual "
+                              << unit->velocity.toString() << "|"
+                              << unit->velocity.norm() << " actual " << " diff "
+                            << (old_unit->velocity - unit->velocity).norm() << " angle diff "
+                            << old_unit->velocity.toRadians() - unit->velocity.toRadians()
+                            << std::endl;
+                    std::cerr << game.currentTick << " aim expected " << std::to_string(old_unit->aim) << " actual "
+                              << std::to_string(unit->aim) << std::endl;
                 }
             }
         }
@@ -148,7 +154,7 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
 //    };
     std::priority_queue<Task> tasks;
     if (!enemyUnits.empty()) {
-        for (Unit* unit: myUnits) {
+        for (const Unit* unit: myUnits) {
             if (!unit->weapon.has_value() || unit->ammo[*unit->weapon] == 0) {
                 continue;
             }
@@ -192,7 +198,7 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
         }
     }
 
-    for (Unit* unit: myUnits) {
+    for (const Unit* unit: myUnits) {
         DRAWK('O', {
             if (point_move_to) {
                 debugInterface->addSegment(unit->position, *point_move_to, 0.1, debugging::Color(1., 0., 0., 1.));
@@ -223,7 +229,7 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
             tasks.push(lookTask);
         }
     }
-    for (Unit*unit: myUnits) {
+    for (const Unit *unit: myUnits) {
         Task moveTask{4, unit->id,
                       std::to_string(unit->id) + " Go to circle center " + game.zone.currentCenter.toString(),
                       {OrderType::kMove}};
@@ -237,7 +243,9 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
                       std::to_string(unit->id) + " Look to movement direction",
                       {OrderType::kRotate}};
         lookTask.score = -1.;
-        lookTask.func = [lookTo = unit->position + unit->direction.toLen(10.)](
+        ///here
+        lookTask.func = [lookTo =
+        unit->velocity.sqrNorm() > 1e-5 ? unit->position + unit->velocity.toLen(10.) : game.zone.currentCenter](
                 POrder &order) -> std::vector<OrderType> {
             return ApplyLookTo(lookTo, order);
         };
@@ -255,7 +263,7 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
         if (!curr.IsAbleToAcceptTask(task.actionTypes)) {
             continue;
         }
-        curr.Accept(task.func(curr));
+        curr.Accept(task.func(curr), task.type);
     }
     TimeMeasure::end(6);
 
@@ -268,6 +276,7 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
         if (damageScore == 0.) {
             auto order = ApplyAvoidRule(*unit, orderedRule);
             order.action = pOrder.action;
+//            std::cerr << order.toString() << std::endl;
             orders[unit->id] = order;
             continue;
         }

@@ -10,6 +10,7 @@ endif()
 
 add_definitions(-DDEBUG_INFO)
 add_definitions(-DTIMING_ENABLED)
+add_definitions(-DTICK_DEBUG_ENABLED)
 
 set(HEADERS
     "DebugInterface.hpp"

@@ -41,7 +41,13 @@ Vec2 firstCollision(Vec2 position, Vec2 velocity, const double unit_radius, cons
     const double x0 = -a * c / aabb;
     const double y0 = -b * c / aabb;
     const double d = sqr(obstacle.radius + unit_radius) - c * c / aabb;
-    const double mult = sqrt(d / aabb);
+    const double div = d / aabb;
+    if (div >= 0.) {
+        const double mult = sqrt(div);
+        return Vec2{x0 + b * mult, y0 - a * mult} + coordsShift;
+    } else {
+        return Vec2{x0, y0} + coordsShift;
+    }
 
 //    const auto pt1 = Vec2{x0 + b * mult, y0 - a * mult};
 //    const auto pt2 = Vec2{x0 - b * mult, y0 + a * mult};
@@ -49,8 +55,6 @@ Vec2 firstCollision(Vec2 position, Vec2 velocity, const double unit_radius, cons
 //    const double len1 = (pt1 - position).norm();
 //    const double len2 = (pt2 - position).norm();
 //    std::cerr << "obs " << obstacle.id << " len1 " << len1 << " len2 " << len2 << " total " << len << std::endl;
-
-    return Vec2{x0 + b * mult, y0 - a * mult} + coordsShift;
 }
 
 
@@ -75,7 +79,7 @@ Vec2 MaxSpeedVector(Vec2 position, Vec2 direction, Vec2 target, const double aim
     const double y0 = -b * c / aabb;
     const double d = sqr(constants.unitMovementCircleRadius) - c * c / aabb;
     const double mult = sqrt(d / aabb);
-    return Vec2{x0 - b * mult, y0 + a * mult} * aimModifier - position;
+    return (Vec2{x0 - b * mult, y0 + a * mult} - position) * aimModifier;
 }
 
 inline Vec2 ResultSpeedVector(Vec2 currentVector, Vec2 targetVector) {
@@ -137,8 +141,11 @@ inline void updateForCollision(Vec2& position, Vec2& velocity) {
             debugInterface->addSegment(new_pt - norm, new_pt + norm, 0.03,
                                        debugging::Color(0., 0., 1., 1.));
         });
-        time_remained -=
-                time_remained * (collision_point - position).norm() / (velocity * time_remained).norm();
+        double timeChange = time_remained * (collision_point - position).norm() / (velocity * time_remained).norm();
+        if (isnan(timeChange)) {
+            std::cerr << "Ooops!" << std::endl;
+        }
+        time_remained -= timeChange;
         const Vec2 norm = (obstacleRef.position - collision_point).toLen(1.);
         velocity -= norm * velocity.dot(norm);
         DRAWK('M', debugInterface->addGradientSegment(position, debugging::Color(1., 0., 0., 1.),

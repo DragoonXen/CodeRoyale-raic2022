@@ -61,6 +61,8 @@ struct ComplexMoveRuleViewer {
     }
 };
 
+UnitOrder ApplyAvoidRule(Unit& unit, const MoveRule& selected_rule);
+
 std::tuple<Unit, double, const Projectile *>
 Simulate(Unit unit, const Game &game, const ComplexMoveRule &moveRule, size_t deep = 20) {
     const auto &constants = Constants::INSTANCE;
@@ -80,16 +82,7 @@ Simulate(Unit unit, const Game &game, const ComplexMoveRule &moveRule, size_t de
         const auto& speedLimit = rule.speedLimit;
 
         last_position = unit.position;
-        if (lookDirection) {
-            unit.direction = applyNewDirection(unit.direction, *lookDirection - unit.position,
-                                               RotationSpeed(unit.aim, unit.weapon));
-        }
-        unit.aim = CalcResultAim(keepAim, unit.aim, unit.weapon);
-
-        const auto vector = MaxSpeedVector(unit.position, unit.direction, moveDirection,
-                                           CalcAimSpeedModifier(unit)).LimitLength(speedLimit);
-        unit.velocity = ResultSpeedVector(unit.velocity, vector);
-        updateForCollision(unit.position, unit.velocity);
+        ApplyAvoidRule(unit, rule);
 
         const double tickTime = constants.tickTime;
         const double passedTime = tickTime * tick;
@@ -153,20 +146,19 @@ std::tuple<double, size_t> ChooseBest(const Unit &unit, const Game &game, const 
     return {minScore, best_id};
 }
 
-UnitOrder ApplyAvoidRule(Unit& unit, const MoveRule& selected_rule) {
-    UnitOrder order;
+inline UnitOrder ApplyAvoidRule(Unit& unit, const MoveRule& selected_rule) {
     if (selected_rule.lookDirection) {
         unit.direction = applyNewDirection(unit.direction, *selected_rule.lookDirection - unit.position,
                                            RotationSpeed(unit.aim, unit.weapon));
     }
-    order.targetDirection = unit.direction;
+
     unit.aim = CalcResultAim(selected_rule.keepAim, unit.aim, unit.weapon);
 
     const auto velocity =
-            MaxSpeedVector(unit.position, unit.direction, selected_rule.moveDirection, CalcAimSpeedModifier(unit));
-    if (sqr(selected_rule.speedLimit) < velocity.sqrNorm()) {
-        velocity.toLen(selected_rule.speedLimit);
-    }
+            MaxSpeedVector(unit.position, unit.direction, selected_rule.moveDirection, CalcAimSpeedModifier(unit))
+                    .LimitLength(selected_rule.speedLimit);
+    UnitOrder order;
+    order.targetDirection = unit.direction;
     order.targetVelocity = velocity;
     unit.velocity = ResultSpeedVector(unit.velocity, velocity);
     updateForCollision(unit.position, unit.velocity);

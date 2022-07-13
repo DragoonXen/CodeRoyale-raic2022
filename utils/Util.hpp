@@ -54,9 +54,9 @@ GetClosestCollision(Vec2 start, Vec2 finish, const double addRadius, std::option
         if (ignoreId && obstacle->id == *ignoreId || (shoot_passable && obstacle->canShootThrough)) {
             continue;
         }
-        const double radius = sqr(obstacle->radius + addRadius);
+        const double radiusSqr = sqr(obstacle->radius + addRadius);
         auto closest_point = SegmentClosestPoint(obstacle->position, start, finish);
-        if ((closest_point - obstacle->position).sqrNorm() > radius) {
+        if ((closest_point - obstacle->position).sqrNorm() > radiusSqr) {
             continue;
         }
         const double curr_distance = (closest_point - start).sqrNorm();
