@@ -110,9 +110,10 @@ inline void ApplyDamage(Unit& unit, double incomingDamage, int tick) {
     unit.health -= incomingDamage;
 }
 
-//bool IsPointVisible(const std::vector<Unit*>& my_units, Vec2 point) {
-//
-//}
-
+#ifdef DEBUG_INFO
+#define VERIFY(a, b) {if (!(a)){std::cerr << (b) << std::endl; getchar();exit(-1);}}
+#else
+#define VERIFY(a, b) ()
+#endif
 
 #endif //AI_CUP_22_UTIL_HPP

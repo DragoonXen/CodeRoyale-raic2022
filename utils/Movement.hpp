@@ -87,11 +87,15 @@ inline Vec2 ResultSpeedVector(Vec2 currentVector, Vec2 targetVector) {
                                                     : targetVector;
 }
 
-inline double rotationSpeed(double aim, const std::optional<int>& weapon) {
+inline double RotationSpeed(double aim, const std::optional<int>& weapon) {
     const Constants &constants = Constants::INSTANCE;
     return aim > 0 ? constants.rotationSpeed -
                      (constants.rotationSpeed - constants.weapons[*weapon].aimRotationSpeed) * aim
                    : constants.rotationSpeed;
+}
+
+inline double RotationSpeed(const Unit& unit) {
+    return RotationSpeed(unit.aim, unit.weapon);
 }
 
 inline Vec2 applyNewDirection(Vec2 currentDirection, Vec2 targetDirection, const double rotation_speed) {

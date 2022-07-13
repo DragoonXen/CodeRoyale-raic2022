@@ -63,7 +63,7 @@ public:
         return *this;
     }
 
-    Vec2 operator-() {
+    Vec2 operator-() const {
         return {-x, -y};
     }
 

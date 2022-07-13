@@ -204,7 +204,7 @@ std::string Constants::toString() const {
     ss << "viewBlocking: ";
     ss << viewBlocking;
     ss << ", ";
-    ss << "rotationSpeed: ";
+    ss << "RotationSpeed: ";
     ss << rotationSpeed;
     ss << ", ";
     ss << "spawnMovementSpeed: ";

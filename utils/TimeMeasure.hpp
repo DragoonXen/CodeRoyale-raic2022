@@ -38,6 +38,9 @@ namespace TimeMeasure {
             sstr << timings[i] << " ";
         }
         std::cerr << sstr.str() << std::endl;
+#ifdef DEBUG_INFO
+        getchar();
+#endif
     }
 
 #else

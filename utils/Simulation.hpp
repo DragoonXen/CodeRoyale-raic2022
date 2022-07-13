@@ -18,11 +18,51 @@ namespace {
     using namespace model;
 }
 
+struct MoveRule {
+    Vec2 moveDirection;
+    std::optional<Vec2> lookDirection;
+    bool keepAim;
+    double speedLimit;
+};
+
+struct ComplexMoveRule {
+    std::vector<MoveRule> storage;
+    std::vector<size_t> usage;
+
+    ComplexMoveRule() : storage{}, usage{} {}
+
+    ComplexMoveRule(MoveRule rule) : storage{rule}, usage{} {}
+
+    ComplexMoveRule(const std::vector<std::pair<MoveRule, size_t>> &toAdd) {
+        usage.clear();
+        storage.clear();
+        for (const auto &pair: toAdd) {
+            AddRule(pair.first, pair.second);
+        }
+    }
+
+    void AddRule(const MoveRule &rule, size_t count = 1) {
+        for (size_t i = 0; i != count; ++i) {
+            usage.push_back(storage.size());
+        }
+        storage.push_back(rule);
+    }
+};
+
+struct ComplexMoveRuleViewer {
+    const ComplexMoveRule &rule;
+    size_t currStep = 0;
+
+    ComplexMoveRuleViewer(const ComplexMoveRule &rule) : rule(rule) {};
+
+    const MoveRule &nextRule() {
+        size_t returnIdx = currStep++;
+        return returnIdx >= rule.usage.size() ? rule.storage.back() : rule.storage[rule.usage[returnIdx]];
+    }
+};
+
 std::tuple<Unit, double, const Projectile *>
-Simulate(Unit unit, const Game &game, const Vec2 &moveDirection, std::optional<Vec2> lookDirection,
-         bool keepAim,
-         const double speedLimit = Constants::INSTANCE.maxUnitForwardSpeed,
-         size_t deep = 20) {
+Simulate(Unit unit, const Game &game, const ComplexMoveRule &moveRule, size_t deep = 20) {
     const auto &constants = Constants::INSTANCE;
     double damagePenalty = 0.;
     Vec2 last_position;
@@ -31,11 +71,18 @@ Simulate(Unit unit, const Game &game, const Vec2 &moveDirection, std::optional<V
     for (size_t i = 0; i != game.projectiles.size(); ++i) {
         remained_projectiles[i] = &game.projectiles[i];
     }
+    ComplexMoveRuleViewer ruleViewer{moveRule};
     for (size_t tick = 0; tick != deep; ++tick) {
+        const auto& rule = ruleViewer.nextRule();
+        const auto& moveDirection = rule.moveDirection;
+        const auto& lookDirection = rule.lookDirection;
+        const auto& keepAim = rule.keepAim;
+        const auto& speedLimit = rule.speedLimit;
+
         last_position = unit.position;
         if (lookDirection) {
             unit.direction = applyNewDirection(unit.direction, *lookDirection - unit.position,
-                                               rotationSpeed(unit.aim, unit.weapon));
+                                               RotationSpeed(unit.aim, unit.weapon));
         }
         unit.aim = CalcResultAim(keepAim, unit.aim, unit.weapon);
 
@@ -89,38 +136,31 @@ Simulate(Unit unit, const Game &game, const Vec2 &moveDirection, std::optional<V
     return {unit, damagePenalty, firstProjectile};
 }
 
-struct AvoidRule {
-    Vec2 moveDirection;
-    std::optional<Vec2> lookDirection;
-    bool keepAim;
-    double speedLimit;
-};
-
-size_t ChooseBest(const Unit &unit, const Game &game, const std::vector<AvoidRule> &rules) {
+std::tuple<double, size_t> ChooseBest(const Unit &unit, const Game &game, const std::vector<ComplexMoveRule> &rules) {
     double minScore = std::numeric_limits<double>::infinity();
     size_t best_id = 0;
     for (size_t id = 0; id != rules.size(); ++id) {
-        const auto& rule = rules[id];
-        const auto [_, score, _2] = Simulate(unit, game, rule.moveDirection, rule.lookDirection, rule.keepAim,
-                                             rule.speedLimit);
+        const auto &rule = rules[id];
+        const auto [_, score, _2] = Simulate(unit, game, rule);
         if (score < minScore) {
             if (score == 0.) {
-                return id;
+                return {0., id};
             }
             minScore = score;
             best_id = id;
         }
     }
-    return best_id;
+    return {minScore, best_id};
 }
 
-UnitOrder ApplyAvoidRule(Unit& unit, const AvoidRule& selected_rule) {
+UnitOrder ApplyAvoidRule(Unit& unit, const MoveRule& selected_rule) {
     UnitOrder order;
     if (selected_rule.lookDirection) {
         unit.direction = applyNewDirection(unit.direction, *selected_rule.lookDirection - unit.position,
-                                            rotationSpeed(unit.aim, unit.weapon));
+                                           RotationSpeed(unit.aim, unit.weapon));
     }
     order.targetDirection = unit.direction;
+    unit.aim = CalcResultAim(selected_rule.keepAim, unit.aim, unit.weapon);
 
     const auto velocity =
             MaxSpeedVector(unit.position, unit.direction, selected_rule.moveDirection, CalcAimSpeedModifier(unit));

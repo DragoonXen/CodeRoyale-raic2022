@@ -4,10 +4,13 @@
 #include "utils/Simulation.hpp"
 #include "utils/TickStartUpdate.hpp"
 #include "utils/Visible.hpp"
+#include "utils/Task.hpp"
+#include "utils/TaskFunctions.hpp"
 #include <exception>
 #include <iostream>
 #include <algorithm>
 #include <unordered_map>
+#include <queue>
 
 namespace {
     using namespace model;
@@ -37,29 +40,32 @@ MyStrategy::MyStrategy(const model::Constants &constants) {
 
 model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *debugInterface) {
     TimeMeasure::start();
+    const auto& constants = Constants::INSTANCE;
     DebugInterface::INSTANCE = debugInterface;
     Game game = game_base;
 
     const auto my_units_filter = [id = game.myId](const auto &unit) { return unit.playerId == id; };
     const auto enemies_filter = [id = game.myId](const auto &unit) { return unit.playerId != id; };
 
-    auto my_units = filterUnits(game.units, my_units_filter);
+    auto myUnits = filterUnits(game.units, my_units_filter);
 
-    std::unordered_map<int, VisibleFilter> filters;
-    for (const auto unit : my_units) {
-        unit->currentFieldOfView = FieldOfView(*unit);
-        filters[unit->id] = FilterObstacles(unit->position, unit->direction, unit->currentFieldOfView);
+    std::unordered_map<int, VisibleFilter> visibilityFilters;
+    for (auto& unit : game.units) {
+        unit.currentFieldOfView = FieldOfView(unit);
+    }
+    for (const auto unit : myUnits) {
+        visibilityFilters[unit->id] = FilterObstacles(unit->position, unit->direction, unit->currentFieldOfView);
     }
 
     TimeMeasure::end(1);
-    UpdateProjectiles(game, last_tick_game, my_units, filters);
+    UpdateProjectiles(game, last_tick_game, myUnits, visibilityFilters);
     TimeMeasure::end(2);
-    UpdateLoot(game, last_tick_game, my_units, filters);
+    UpdateLoot(game, last_tick_game, myUnits, visibilityFilters);
     TimeMeasure::end(3);
-    UpdateUnits(game, last_tick_game, my_units, filters);
+    UpdateUnits(game, last_tick_game, myUnits, visibilityFilters);
     TimeMeasure::end(4);
-    my_units = filterUnits(game.units, my_units_filter);
-    auto enemy_units = filterUnits(game.units, enemies_filter);
+    myUnits = filterUnits(game.units, my_units_filter);
+    auto enemyUnits = filterUnits(game.units, enemies_filter);
 
     DRAW({
              for (auto &unit: game.units) {
@@ -74,22 +80,6 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
              }
          });
 
-    double closest_enemy_dst = std::numeric_limits<double>::max();
-    const Unit *enemy_to_attack = nullptr;
-    for (const auto &enemy_unit: enemy_units) {
-        const double distance_sum = [&enemy_unit, &my_units]() {
-            double sum = 0.;
-            for (const auto &my_unit: my_units) {
-                sum += (my_unit->position - enemy_unit->position).norm();
-            }
-            return sum;
-        }();
-        if (distance_sum < closest_enemy_dst) {
-            closest_enemy_dst = distance_sum;
-            enemy_to_attack = enemy_unit;
-        }
-    }
-
     if (debugInterface) {
         for (const auto &item: debugInterface->getState().pressedKeys) {
             if (item.find('W') != std::string::npos) {
@@ -103,33 +93,106 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
                 this->point_move_to.reset();
             }
         }
-    }
-
-    if (last_tick_game && debugInterface != nullptr) {
-        auto my_units_last_tick = filterUnits(last_tick_game->units, my_units_filter);
-        for (const auto &unit: my_units) {
-            const auto old_unit = [unit, &my_units_last_tick]() -> Unit * {
-                for (const auto &old_unit: my_units_last_tick) {
-                    if (old_unit->id == unit->id) {
-                        return old_unit;
+#ifdef DEBUG_INFO
+        if (last_tick_game) {
+            auto my_units_last_tick = filterUnits(last_tick_game->units, my_units_filter);
+            for (const auto &unit: myUnits) {
+                const auto old_unit = [unit, &my_units_last_tick]() -> Unit * {
+                    for (const auto &old_unit: my_units_last_tick) {
+                        if (old_unit->id == unit->id) {
+                            return old_unit;
+                        }
                     }
+                    return nullptr;
+                }();
+                if ((old_unit->position - unit->position).norm() > 1e-10) {
+                    std::cerr << game.currentTick << " pos expected " << old_unit->position.toString() << " actual "
+                              << unit->position.toString() << " diff " << (old_unit->position - unit->position).norm()
+                              << std::endl;
+                    std::cerr << game.currentTick << " vel expected " << old_unit->velocity.toString() << " actual "
+                              << unit->velocity.toString() << " diff " << (old_unit->velocity - unit->velocity).norm()
+                              << std::endl;
                 }
-                return nullptr;
-            }();
-            if ((old_unit->position - unit->position).norm() > 1e-10) {
-                std::cerr << game.currentTick << " pos expected " << old_unit->position.toString() << " actual "
-                          << unit->position.toString() << " diff " << (old_unit->position - unit->position).norm()
-                          << std::endl;
-                std::cerr << game.currentTick << " vel expected " << old_unit->velocity.toString() << " actual "
-                          << unit->velocity.toString() << " diff " << (old_unit->velocity - unit->velocity).norm()
-                          << std::endl;
             }
         }
-
+#endif
     }
 
-    std::unordered_map<int, model::UnitOrder> orders;
-    for (const auto &unit: my_units) {
+    Vec2 centerPoint = {0., 0.};
+    for (auto& unit : myUnits) {
+        centerPoint += unit->position;
+    }
+    centerPoint *= (1. / myUnits.size());
+
+//    double closest_enemy_dst = std::numeric_limits<double>::max();
+//    const Unit *enemy_to_attack = nullptr;
+//    for (const auto &enemyUnit: enemyUnits) {
+//        double distance_sqr = (enemyUnit->position - centerPoint).sqrNorm();
+//        if (distance_sqr < closest_enemy_dst) {
+//            closest_enemy_dst = distance_sqr;
+//            enemy_to_attack = enemyUnit;
+//        }
+//    }
+//
+//    const auto getClosest = [&enemyUnits](Vec2 position) {
+//        double distance = std::numeric_limits<double>::infinity();
+//        Unit *selected = nullptr;
+//        for (auto enemyUnit: enemyUnits) {
+//            const double currDist = (enemyUnit->position - position).sqrNorm();
+//            if (currDist < distance) {
+//                distance = currDist;
+//                selected = enemyUnit;
+//            }
+//        }
+//        return selected;
+//    };
+    std::priority_queue<Task> tasks;
+    if (!enemyUnits.empty()) {
+        for (Unit* unit: myUnits) {
+            if (!unit->weapon.has_value() || unit->ammo[*unit->weapon] == 0) {
+                continue;
+            }
+            std::vector<std::pair<double, int>> distances(enemyUnits.size());
+            for (size_t i = 0; i != enemyUnits.size(); ++i) {
+                const auto& enUnit = enemyUnits[i];
+                distances.emplace_back(std::make_pair((unit->position - enUnit->position).sqrNorm(), i));
+            }
+            std::sort(distances.begin(), distances.end());
+            for (const auto& item : distances) {
+                const auto& enUnit = enemyUnits[item.second];
+                Task attackTask{0, unit->id,
+                                std::to_string(unit->id) + " attack enemy " + std::to_string(enUnit->id),
+                                {OrderType::kAction, OrderType::kRotate}};
+                constexpr double kMaxDangerDistanceSqr = 64.;
+                attackTask.score = kMaxDangerDistanceSqr * 1000. / std::max(kMaxDangerDistanceSqr, item.first);
+                if (!IsVisible<VisionFilter::kShootFilter>(unit->position, unit->direction, unit->currentFieldOfView,
+                                                           enUnit->position, visibilityFilters[unit->id])) {
+                    attackTask.score /= 10.;
+                }
+                if (!IsReachable(unit->position, enUnit->position, visibilityFilters[unit->id])) {
+                    attackTask.score /= 10.;
+                }
+                if (enUnit->shield + enUnit->health < constants.weapons[*unit->weapon].projectileDamage + 1e-5) {
+                    attackTask.score *= 100.;
+                }
+                attackTask.func = [unit, enUnit, tick = game.currentTick](POrder &order) -> std::vector<OrderType> {
+                    return ApplyAttackTask(*unit, *enUnit, tick, order);
+                };
+                tasks.push(attackTask);
+
+                Task moveTask{1, unit->id,
+                              std::to_string(unit->id) + " move to attack enemy " + std::to_string(enUnit->id),
+                              {OrderType::kMove}};
+                moveTask.score = attackTask.score;
+                moveTask.func = [unit, enUnit, &visibilityFilters](POrder &order) -> std::vector<OrderType> {
+                    return ApplyMoveToUnitTask(*unit, *enUnit, visibilityFilters, order);
+                };
+                tasks.push(moveTask);
+            };
+        }
+    }
+
+    for (Unit* unit: myUnits) {
         DRAWK('O', {
             if (point_move_to) {
                 debugInterface->addSegment(unit->position, *point_move_to, 0.1, debugging::Color(1., 0., 0., 1.));
@@ -138,84 +201,194 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
                 debugInterface->addSegment(unit->position, *point_look_to, 0.1, debugging::Color(0., 1., 0., 1.));
             }
         });
-//        DRAW(
-//                if (&unit != my_units.data()) {
-//                    for (double i = unit->position.x - 30; i < unit->position.x + 31; i += 1) {
-//                        for (double j = unit->position.y - 30; j < unit->position.y + 31; j += 1) {
-//                            int count = constants.Get(i, j).size();
-//                            if (count == 0) {
-//                                continue;
-//                            }
-//                            int centerX = constants.toI(i);
-//                            int centerY = constants.toI(j);
-//
-//                            debugInterface->addRect({centerX - 0.5, centerY - 0.5}, {1., 1.},
-//                                                    debugging::Color(1., 0., 0., 0.2 * count));
-//                        }
-//                    }
-//                });
-
-        /** AVOID LOGIC **/
         if (point_move_to) {
-            const auto [resultUnit, damageScore, firstProjectile] = Simulate(*unit, game, *point_move_to, point_look_to,
-                                                                             false);
-            if (damageScore != 0.) {
-                Vec2 norm = {firstProjectile->velocity.y, -firstProjectile->velocity.x};
-                if ((unit->velocity - norm).sqrNorm() > (unit->velocity + norm).sqrNorm()) {
-                    norm = -norm;
-                }
-                std::vector<AvoidRule> avoidRules;
-                constexpr double kMoveLength = 30.;
-                avoidRules.push_back({unit->position + norm.toLen(kMoveLength), point_look_to, false,
+            Task moveTask{2, unit->id,
+                          std::to_string(unit->id) + " Manual move to point " + point_move_to->toString(),
+                          {OrderType::kMove}};
+            moveTask.score = 1e100;
+            moveTask.func = [unit, moveTo = *point_move_to, &filter = visibilityFilters[unit->id]](
+                    POrder &order) -> std::vector<OrderType> {
+                return ApplyMoveTo(*unit, moveTo, filter, std::numeric_limits<double>::infinity(), order);
+            };
+            tasks.push(moveTask);
+        }
+        if (point_look_to) {
+            Task lookTask{3, unit->id,
+                          std::to_string(unit->id) + " Manual look to point " + point_look_to->toString(),
+                          {OrderType::kRotate}};
+            lookTask.score = 1e100;
+            lookTask.func = [lookTo = *point_look_to](POrder &order) -> std::vector<OrderType> {
+                return ApplyLookTo(lookTo, order);
+            };
+            tasks.push(lookTask);
+        }
+    }
+    for (Unit*unit: myUnits) {
+        Task moveTask{4, unit->id,
+                      std::to_string(unit->id) + " Go to circle center " + game.zone.currentCenter.toString(),
+                      {OrderType::kMove}};
+        moveTask.score = 0.;
+        moveTask.func = [unit, moveTo = game.zone.currentCenter, &filter = visibilityFilters[unit->id]](
+                POrder &order) -> std::vector<OrderType> {
+            return ApplyMoveTo(*unit, moveTo, filter, std::numeric_limits<double>::infinity(), order);
+        };
+        tasks.push(moveTask);
+        Task lookTask{5, unit->id,
+                      std::to_string(unit->id) + " Look to movement direction",
+                      {OrderType::kRotate}};
+        lookTask.score = -1.;
+        lookTask.func = [lookTo = unit->position + unit->direction.toLen(10.)](
+                POrder &order) -> std::vector<OrderType> {
+            return ApplyLookTo(lookTo, order);
+        };
+        tasks.push(lookTask);
+    }
+    TimeMeasure::end(5);
+
+    std::unordered_map<int, POrder> pOrders;
+    for (Unit* unit: myUnits) {
+        pOrders[unit->id] = POrder();
+    }
+    for (;!tasks.empty(); tasks.pop()) {
+        const auto& task = tasks.top();
+        POrder& curr = pOrders[task.unitId];
+        if (!curr.IsAbleToAcceptTask(task.actionTypes)) {
+            continue;
+        }
+        curr.Accept(task.func(curr));
+    }
+    TimeMeasure::end(6);
+
+    std::unordered_map<int, model::UnitOrder> orders;
+
+    for (Unit *unit: myUnits) {
+        const auto &pOrder = pOrders[unit->id];
+        MoveRule orderedRule = pOrder.toMoveRule();
+        const auto [resultUnit, damageScore, firstProjectile] = Simulate(*unit, game, orderedRule);
+        if (damageScore == 0.) {
+            auto order = ApplyAvoidRule(*unit, orderedRule);
+            order.action = pOrder.action;
+            orders[unit->id] = order;
+            continue;
+        }
+        TimeMeasure::end(7);
+        std::vector<MoveRule> basicRules = [&]() {
+            std::vector<MoveRule> avoidRules;
+            Vec2 norm = {firstProjectile->velocity.y, -firstProjectile->velocity.x};
+            if ((unit->velocity - norm).sqrNorm() > (unit->velocity + norm).sqrNorm()) {
+                norm = -norm;
+            }
+            constexpr double kMoveLength = 30.;
+            avoidRules.push_back({unit->position + norm.toLen(kMoveLength), orderedRule.lookDirection, orderedRule.keepAim,
+                                  std::numeric_limits<double>::infinity()});
+            avoidRules.push_back({unit->position - norm.toLen(kMoveLength), orderedRule.lookDirection, orderedRule.keepAim,
+                                  std::numeric_limits<double>::infinity()});
+            for (const auto &dir: kMoveDirections) {
+                avoidRules.push_back({unit->position + dir * kMoveLength, orderedRule.lookDirection, orderedRule.keepAim,
                                       std::numeric_limits<double>::infinity()});
-                avoidRules.push_back({unit->position - norm.toLen(kMoveLength), point_look_to, false,
-                                      std::numeric_limits<double>::infinity()});
-                for (const auto &dir: kMoveDirections) {
-                    avoidRules.push_back({unit->position + dir * kMoveLength, point_look_to, false,
-                                          std::numeric_limits<double>::infinity()});
-                }
-                avoidRules.push_back(
-                        {unit->position + norm.toLen(kMoveLength), unit->position + norm.toLen(kMoveLength), false,
-                         std::numeric_limits<double>::infinity()});
-                avoidRules.push_back(
-                        {unit->position - norm.toLen(kMoveLength), unit->position - norm.toLen(kMoveLength), false,
-                         std::numeric_limits<double>::infinity()});
-                for (const auto &dir: kMoveDirections) {
-                    Vec2 to = unit->position + dir * kMoveLength;
-                    avoidRules.push_back({to, to, false, std::numeric_limits<double>::infinity()});
-                }
-                size_t rule_id = ChooseBest(*unit, game, avoidRules);
-                orders[unit->id] = ApplyAvoidRule(*unit, avoidRules[rule_id]);
-                continue;
+            }
+            return avoidRules;
+        }();
+
+        std::vector<ComplexMoveRule> complexRules;
+        for (const auto& rule : basicRules) {
+            complexRules.emplace_back(ComplexMoveRule({{orderedRule, 1},
+                                                       {{rule.moveDirection,
+                                                                rule.moveDirection,
+                                                                false,
+                                                                std::numeric_limits<double>::infinity()},
+                                                                     0}}));
+        }
+        for (const auto& rule : basicRules) {
+            complexRules.emplace_back(rule);
+        }
+        const size_t notApplyAimAboveId = complexRules.size();
+        for (auto &rule: basicRules) {
+            rule.lookDirection = rule.moveDirection;
+            complexRules.emplace_back(rule);
+        }
+        if (orderedRule.keepAim) {
+            for (auto &rule: basicRules) {
+                rule.keepAim = false;
+                complexRules.emplace_back(rule);
             }
         }
 
-        model::UnitOrder order(*unit);
-        if (point_look_to) {
-            order.targetDirection = *point_look_to - unit->position;
-            unit->direction = applyNewDirection(unit->direction, order.targetDirection,
-                                                rotationSpeed(unit->aim, unit->weapon));
+        auto [score, rule_id] = ChooseBest(*unit, game, complexRules);
+        auto order = ApplyAvoidRule(*unit, complexRules[rule_id].storage.front());
+        if (rule_id < notApplyAimAboveId || !pOrder.aim) {
+            order.action = pOrder.action;
         }
-        // aim
-        if (point_move_to) {
-            const auto vector = MaxSpeedVector(unit->position, unit->direction, *point_move_to,
-                                               CalcAimSpeedModifier(*unit));
-            order.targetVelocity = vector;
-            unit->velocity = ResultSpeedVector(unit->velocity, vector);
-            updateForCollision(unit->position, unit->velocity);
-        }
-
-//        for (const auto &target: kMoveDirections) {
-//            const auto point = unit->position + target.toLen(30);
-//            const auto vector = MaxSpeedVector(unit->position, unit->direction, point, constants);
-////            DRAW(
-////                    debugInterface->addGradientSegment(unit->position, debugging::Color(1., 0., 0., 1.),
-////                                                       unit->position + vector, debugging::Color(0., 1., 0., 1.), .1);
-////            );
-//        }
-
-        orders[unit->id] = std::move(order);
+        orders[unit->id] = order;
+        TimeMeasure::end(8);
     }
+
+    TimeMeasure::end(7);
+
+
+//    std::unordered_map<int, model::UnitOrder> orders;
+//    for (const auto &unit: myUnits) {
+//        /** AVOID LOGIC **/
+//        if (point_move_to) {
+//            const auto [resultUnit, damageScore, firstProjectile] = Simulate(*unit, game, *point_move_to, point_look_to,
+//                                                                             false);
+//            if (damageScore != 0.) {
+//                Vec2 norm = {firstProjectile->velocity.y, -firstProjectile->velocity.x};
+//                if ((unit->velocity - norm).sqrNorm() > (unit->velocity + norm).sqrNorm()) {
+//                    norm = -norm;
+//                }
+//                std::vector<MoveRule> avoidRules;
+//                constexpr double kMoveLength = 30.;
+//                avoidRules.push_back({unit->position + norm.toLen(kMoveLength), point_look_to, false,
+//                                      std::numeric_limits<double>::infinity()});
+//                avoidRules.push_back({unit->position - norm.toLen(kMoveLength), point_look_to, false,
+//                                      std::numeric_limits<double>::infinity()});
+//                for (const auto &dir: kMoveDirections) {
+//                    avoidRules.push_back({unit->position + dir * kMoveLength, point_look_to, false,
+//                                          std::numeric_limits<double>::infinity()});
+//                }
+//                avoidRules.push_back(
+//                        {unit->position + norm.toLen(kMoveLength), unit->position + norm.toLen(kMoveLength), false,
+//                         std::numeric_limits<double>::infinity()});
+//                avoidRules.push_back(
+//                        {unit->position - norm.toLen(kMoveLength), unit->position - norm.toLen(kMoveLength), false,
+//                         std::numeric_limits<double>::infinity()});
+//                for (const auto &dir: kMoveDirections) {
+//                    Vec2 to = unit->position + dir * kMoveLength;
+//                    avoidRules.push_back({to, to, false, std::numeric_limits<double>::infinity()});
+//                }
+//                size_t rule_id = ChooseBest(*unit, game, avoidRules);
+//                orders[unit->id] = ApplyAvoidRule(*unit, avoidRules[rule_id]);
+//                continue;
+//            }
+//        }
+//
+//        model::UnitOrder order(*unit);
+//        if (point_look_to) {
+//            order.targetDirection = *point_look_to - unit->position;
+//            unit->direction = applyNewDirection(unit->direction, order.targetDirection,
+//                                                RotationSpeed(unit->aim, unit->weapon));
+//        }
+//        // aim
+//        if (point_move_to) {
+//            const auto vector = MaxSpeedVector(unit->position, unit->direction, *point_move_to,
+//                                               CalcAimSpeedModifier(*unit));
+//            order.targetVelocity = vector;
+//            unit->velocity = ResultSpeedVector(unit->velocity, vector);
+//            updateForCollision(unit->position, unit->velocity);
+//        }
+//
+////        for (const auto &target: kMoveDirections) {
+////            const auto point = unit->position + target.toLen(30);
+////            const auto vector = MaxSpeedVector(unit->position, unit->direction, point, constants);
+//////            DRAW(
+//////                    debugInterface->addGradientSegment(unit->position, debugging::Color(1., 0., 0., 1.),
+//////                                                       unit->position + vector, debugging::Color(0., 1., 0., 1.), .1);
+//////            );
+////        }
+//
+//        orders[unit->id] = std::move(order);
+//    }
 
 
     this->last_tick_game = std::move(game);

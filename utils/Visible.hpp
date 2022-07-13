@@ -17,6 +17,7 @@ namespace {
 
 struct VisibleFilter {
     std::vector<const Obstacle *> visionBlockingObstacles;
+    std::vector<const Obstacle *> closeObstacles;
     std::vector<const Obstacle *> shootBlockingObstacles;
 };
 
@@ -47,6 +48,7 @@ VisibleFilter FilterObstacles(Vec2 position, Vec2 direction, double fieldOfView)
         if (distanceToObstacle >= constants.viewDistance) {
             continue;
         }
+        visibleFilter.closeObstacles.push_back(&obstacle);
         bool visible = [&]() {
             if (SegmentPointDist(obstacle.position, position, leftPt) < obstacle.radius ||
                 SegmentPointDist(obstacle.position, position, rightPt) < obstacle.radius) {
@@ -73,6 +75,39 @@ enum VisionFilter {
     kVisibilityFilter
 };
 
+bool IsReachable(Vec2 position, Vec2 point, const VisibleFilter &visibleFilter) {
+    const auto &constants = Constants::INSTANCE;
+    if (sqr(constants.viewDistance) < (point - position).sqrNorm()) {
+        return false;
+    }
+    for (const auto &obstacle: visibleFilter.closeObstacles) {
+        if (SegmentPointDist(obstacle->position, position, point) + 1e-8 <= obstacle->radius) {
+            return false;
+        }
+    }
+    return true;
+}
+
+std::pair<const Obstacle *, Vec2>
+ClosestIntersectionPoint(Vec2 position, Vec2 point, const std::vector<const Obstacle *> &obstacleVector) {
+    double minDistance = std::numeric_limits<double>::infinity();
+    const Obstacle *closestObstacle = nullptr;
+    Vec2 closestPoint = {};
+    for (auto obstacle: obstacleVector) {
+        Vec2 currentPoint = SegmentClosestPoint(obstacle->position, position, point);
+        if ((currentPoint - obstacle->position).norm() + 0.1 > obstacle->radius + Constants::INSTANCE.unitRadius) {
+            continue;
+        }
+        const double distanceToPoint = (currentPoint - position).sqrNorm();
+        if (distanceToPoint < minDistance) {
+            minDistance = distanceToPoint;
+            closestObstacle = obstacle;
+            closestPoint = currentPoint;
+        }
+    }
+    return {closestObstacle, closestPoint};
+}
+
 template<VisionFilter filter>
 bool
 IsVisible(Vec2 position, Vec2 direction, double fieldOfView, Vec2 point, const VisibleFilter &visibleFilter) {
@@ -85,17 +120,11 @@ IsVisible(Vec2 position, Vec2 direction, double fieldOfView, Vec2 point, const V
     if (angleDiff * 2. > fieldOfView) {
         return false;
     }
-    if constexpr (filter == VisionFilter::kVisibilityFilter) {
-        for (const auto &obstacle: visibleFilter.visionBlockingObstacles) {
-            if (SegmentPointDist(obstacle->position, position, point) + 1e-8 <= obstacle->radius) {
-                return false;
-            }
-        }
-    } else {
-        for (const auto &obstacle: visibleFilter.shootBlockingObstacles) {
-            if (SegmentPointDist(obstacle->position, position, point) + 1e-8 <= obstacle->radius) {
-                return false;
-            }
+    const auto &obstacleVector = (filter == VisionFilter::kVisibilityFilter ?
+                                  visibleFilter.visionBlockingObstacles : visibleFilter.shootBlockingObstacles);
+    for (const auto &obstacle: obstacleVector) {
+        if (SegmentPointDist(obstacle->position, position, point) + 1e-8 <= obstacle->radius) {
+            return false;
         }
     }
     return true;
