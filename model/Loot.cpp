@@ -3,22 +3,22 @@
 namespace model {
 
     namespace {
-        std::string WriteTagString(int tag, int weaponType, int amount) {
+        std::string WriteTagString(LootType tag, int weaponType, int amount) {
             std::stringstream ss;
             switch (tag) {
-                case 0:
+                case LootType::Weapon:
                     ss << "Item::Weapon { ";
                     ss << "typeIndex: ";
                     ss << weaponType;
                     ss << " }";
                     break;
-                case 1:
+                case LootType::ShieldPotions:
                     ss << "Item::ShieldPotions { ";
                     ss << "amount: ";
                     ss << amount;
                     ss << " }";
                     break;
-                case 2:
+                case LootType::Ammo:
                     ss << "Item::Ammo { ";
                     ss << "weaponTypeIndex: ";
                     ss << weaponType;
@@ -31,22 +31,23 @@ namespace model {
             return ss.str();
         }
 
-        std::tuple<int, int, int> readIFrom(InputStream &stream) {
+        std::tuple<LootType, int, int> readIFrom(InputStream &stream) {
             switch (stream.readInt()) {
                 case 0:
-                    return {0, stream.readInt(), 0};
+                    return {LootType::Weapon, stream.readInt(), 0};
                 case 1:
-                    return {1, 0, stream.readInt()};
+                    return {LootType::ShieldPotions, 0, stream.readInt()};
                 case 2:
-                    return {2, stream.readInt(), stream.readInt()};
+                    return {LootType::Ammo, stream.readInt(), stream.readInt()};
                 default:
                     throw std::runtime_error("Unexpected tag value");
             }
         }
     }
 
-    Loot::Loot(int id, model::Vec2 position, int tag, int weaponTypeIndex, int amount) : id(id), position(position),
-                                                                                         tag(tag), weaponTypeIndex(
+    Loot::Loot(int id, model::Vec2 position, LootType tag, int weaponTypeIndex, int amount) : id(id),
+                                                                                              position(position),
+                                                                                              tag(tag), weaponTypeIndex(
                     weaponTypeIndex), amount(amount) {}
 
 // Read Loot from input stream

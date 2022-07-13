@@ -50,7 +50,6 @@ public:
     int shieldPotions;
 
     double currentFieldOfView;
-
     int lastSeenTick;
 
     Unit(int id, int playerId, double health, double shield, int extraLives, model::Vec2 position, std::optional<double> remainingSpawnTime, model::Vec2 velocity, model::Vec2 direction, double aim, std::optional<model::Action> action, int healthRegenerationStartTick, std::optional<int> weapon, int nextShotTick, std::vector<int> ammo, int shieldPotions);

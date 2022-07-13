@@ -135,28 +135,35 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
     }
     centerPoint *= (1. / myUnits.size());
 
-//    double closest_enemy_dst = std::numeric_limits<double>::max();
-//    const Unit *enemy_to_attack = nullptr;
-//    for (const auto &enemyUnit: enemyUnits) {
-//        double distance_sqr = (enemyUnit->position - centerPoint).sqrNorm();
-//        if (distance_sqr < closest_enemy_dst) {
-//            closest_enemy_dst = distance_sqr;
-//            enemy_to_attack = enemyUnit;
-//        }
-//    }
-//
-//    const auto getClosest = [&enemyUnits](Vec2 position) {
-//        double distance = std::numeric_limits<double>::infinity();
-//        Unit *selected = nullptr;
-//        for (auto enemyUnit: enemyUnits) {
-//            const double currDist = (enemyUnit->position - position).sqrNorm();
-//            if (currDist < distance) {
-//                distance = currDist;
-//                selected = enemyUnit;
-//            }
-//        }
-//        return selected;
-//    };
+    std::unordered_map<int, const Unit *> unitById;
+    const std::vector<Unit> unitsBackup = game.units;
+    for (const auto& unit : unitsBackup) {
+        unitById[unit.id] = &unit;
+    }
+    std::unordered_map<int, const Loot*> lootById;
+    std::vector<std::pair<double, int>> ammos;
+    std::vector<std::pair<double, int>> weapons;
+    std::vector<std::pair<double, int>> shieldPotions;
+    for (size_t i = 0; i != game.loot.size(); ++i) {
+        const auto& loot = game.loot[i];
+        lootById[loot.id] = &loot;
+        const double distance = (centerPoint - loot.position).norm();
+        switch (loot.tag) {
+            case LootType::Weapon:
+                weapons.emplace_back(distance, i);
+                break;
+            case LootType::ShieldPotions:
+                shieldPotions.emplace_back(distance, i);
+                break;
+            case LootType::Ammo:
+                ammos.emplace_back(distance, i);
+                break;
+        }
+    }
+    std::sort(weapons.begin(), weapons.end());
+    std::sort(ammos.begin(), ammos.end());
+    std::sort(shieldPotions.begin(), shieldPotions.end());
+
     std::priority_queue<Task> tasks;
     if (!enemyUnits.empty()) {
         for (const Unit* unit: myUnits) {
@@ -167,7 +174,7 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
             distances.reserve(enemyUnits.size());
             for (size_t i = 0; i != enemyUnits.size(); ++i) {
                 const auto& enUnit = enemyUnits[i];
-                distances.emplace_back(std::make_pair((unit->position - enUnit->position).sqrNorm(), i));
+                distances.emplace_back((unit->position - enUnit->position).sqrNorm(), i);
             }
             std::sort(distances.begin(), distances.end());
             for (const auto& item : distances) {
@@ -193,9 +200,9 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
                               std::to_string(unit->id) + " move to attack enemy " + std::to_string(enUnit->id),
                               {OrderType::kMove}};
                 moveTask.score = attackTask.score;
-                if (!IsReachable(unit->position, enUnit->position, visibilityFilters[unit->id])) {
-                    moveTask.score /= 10.;
-                }
+//                if (!IsReachable(unit->position, enUnit->position, visibilityFilters[unit->id])) {
+//                    moveTask.score /= 10.;
+//                }
                 moveTask.func = [unit, enUnit, &visibilityFilters](POrder &order) -> std::vector<OrderType> {
                     return ApplyMoveToUnitTask(*unit, *enUnit, visibilityFilters, order);
                 };
@@ -236,13 +243,17 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
         }
     }
     for (const Unit *unit: myUnits) {
-        Task moveTask{4, unit->id,
-                      std::to_string(unit->id) + " Go to circle center " + game.zone.currentCenter.toString(),
-                      {OrderType::kMove}};
+        Task moveTask{4, unit->id, std::to_string(unit->id) + " Explore zone ", {OrderType::kMove}};
         moveTask.score = 0.;
-        moveTask.func = [unit, moveTo = game.zone.currentCenter, &filter = visibilityFilters[unit->id]](
+        moveTask.func = [unit, &zone = game.zone, &filter = visibilityFilters[unit->id]](
                 POrder &order) -> std::vector<OrderType> {
-            return ApplyMoveTo(*unit, moveTo, filter, std::numeric_limits<double>::infinity(), order);
+            Vec2 zoneDst = unit->position - zone.currentCenter;
+            if (zoneDst.sqrNorm() < 1.) {
+                zoneDst = {1., 0};
+            }
+            const Vec2 moveDirection =
+                    zone.currentCenter + Vec2(zoneDst.toRadians() + M_PI / 6).toLen(zone.currentRadius * .7);
+            return ApplyMoveTo(*unit, moveDirection, filter, std::numeric_limits<double>::infinity(), order);
         };
         tasks.push(moveTask);
         Task lookTask{5, unit->id,
@@ -256,6 +267,117 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
             return ApplyLookTo(lookTo, order);
         };
         tasks.push(lookTask);
+    }
+    // loot && potions usage
+    for (const Unit *unit: myUnits) {
+        const auto pickTask = [&unit, &visibilityFilters, &tasks, &game](const double distance, const Loot &loot,
+                                                                  const double priority) {
+            if ((loot.position - game.zone.currentCenter).sqrNorm() >= sqr(game.zone.currentRadius)) {
+                return false;
+            }
+            if (distance <= Constants::INSTANCE.unitRadius) {
+                Task pickTask{6, unit->id,
+                              std::to_string(unit->id) + " pick up " + loot.position.toString(),
+                              {OrderType::kAction}};
+                pickTask.score = priority;
+                pickTask.func = [unit, &loot](
+                        POrder &order) -> std::vector<OrderType> {
+                    return ApplyPickUp(*unit, loot, order);
+                };
+                tasks.push(pickTask);
+            } else {
+                Task moveTask{7, unit->id,
+                              std::to_string(unit->id) + " move to pick up " + loot.position.toString(),
+                              {OrderType::kMove}};
+                moveTask.score = priority / std::max(distance, 1.);
+                moveTask.func = [unit, &loot, &visibilityFilters](
+                        POrder &order) -> std::vector<OrderType> {
+                    return ApplyMoveTo(*unit, loot.position, visibilityFilters[unit->id],
+                                       std::numeric_limits<double>::infinity(), order);
+                };
+                tasks.push(moveTask);
+            }
+            return true;
+        };
+        const auto pickWeapon =
+                [&weapons, &game, &pickTask](int weaponType, double priority) {
+                     if (priority <= 0.) {
+                        return;
+                    }
+                    for (const auto &weapon: weapons) {
+                        const Loot &loot = game.loot[weapon.second];
+                        if (loot.weaponTypeIndex != weaponType) {
+                            continue;
+                        }
+                        if (pickTask(weapon.first, loot, priority)) {
+                            return;
+                        }
+                    }
+                };
+        {
+            std::vector<double> priority;
+            constexpr double kRelativeWeight[] = {100., 1000., 10000.};
+            for (int i = 0; i != 3; ++i) {
+                priority.push_back(
+                        (kRelativeWeight[i] * unit->ammo[i]) / Constants::INSTANCE.weapons[i].maxInventoryAmmo);
+            }
+            for (int i = 0; i != 3; ++i) {
+                pickWeapon(i, priority[i] - (unit->weapon ? priority[*unit->weapon] : 0));
+            }
+            for (int i = 0; i != 3; ++i) {
+                priority[i] = kRelativeWeight[i]  - priority[i];
+                if (*unit->weapon == i) {
+                    priority[i] *= 2;
+                }
+                const int diff = constants.weapons[i].maxInventoryAmmo - unit->ammo[i];
+                if (diff == 0) {
+                    continue;
+                }
+                const double portion = diff / (double) constants.weapons[i].maxInventoryAmmo;
+                int maxAmmo = 0;
+                for (auto &item: ammos) {
+                    const Loot &loot = game.loot[item.second];
+                    if (loot.weaponTypeIndex != i || loot.amount <= maxAmmo) {
+                        continue;
+                    }
+                    if (pickTask(item.first, loot, priority[i] * std::min(loot.amount, diff) * sqr(portion) /
+                                                   Constants::INSTANCE.weapons[i].maxInventoryAmmo)) {
+                        maxAmmo = loot.amount;
+                        if (maxAmmo >= diff) {
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        if (unit->shield + constants.shieldPerPotion <= constants.maxShield && unit->shieldPotions > 0) {
+            Task useShieldPotion{8, unit->id, std::to_string(unit->id) + " use shield potion ", {OrderType::kAction}};
+            useShieldPotion.score = 800. * (constants.maxShield - unit->shield) / constants.shieldPerPotion;
+            useShieldPotion.func = [](
+                    POrder &order) -> std::vector<OrderType> {
+                order.action = std::make_shared<ActionOrder::UseShieldPotion>();
+                return {OrderType::kAction};
+            };
+            tasks.push(useShieldPotion);
+        }
+
+        if (unit->shieldPotions < constants.maxShieldPotionsInInventory) {
+            int diff = constants.maxShieldPotionsInInventory - unit->shieldPotions;
+            // 200
+            int maxPotions = 0;
+            for (auto &item: shieldPotions) {
+                const Loot &loot = game.loot[item.second];
+                if (loot.amount <= maxPotions) {
+                    continue;
+                }
+                maxPotions = loot.amount;
+                pickTask(item.first, loot, 200 * std::min(loot.amount, diff) * sqr(diff));
+                if (maxPotions >= diff) {
+                    break;
+                }
+            }
+        }
     }
     TimeMeasure::end(5);
 
@@ -317,12 +439,10 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
 
         std::vector<ComplexMoveRule> complexRules;
         for (const auto &rule: basicRules) {
-            complexRules.emplace_back(ComplexMoveRule({{orderedRule, 1},
-                                                       {{rule.moveDirection,
-                                                                rule.moveDirection,
-                                                                false,
-                                                                std::numeric_limits<double>::infinity()},
-                                                                     0}}));
+            complexRules.emplace_back(
+                    ComplexMoveRule({{orderedRule, 1},
+                                     {{rule.moveDirection, rule.moveDirection, false, std::numeric_limits<double>::infinity()},
+                                                   0}}));
         }
         for (const auto& rule : basicRules) {
             complexRules.emplace_back(rule);
@@ -416,6 +536,36 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
 //        orders[unit->id] = std::move(order);
 //    }
 
+
+    // remove picker loot
+    std::unordered_set<int> pickedIds;
+    for (auto& [unitId, order] : orders) {
+        if (!order.action) {
+            continue;
+        }
+        auto pickup = std::dynamic_pointer_cast<ActionOrder::Pickup>(*order.action);
+        if (!pickup) {
+            continue;
+        }
+        auto loot = lootById[pickup->loot];
+        auto unit = unitById[unitId];
+        if (unit->playerId == game.myId && (unit->position - loot->position).sqrNorm() <= sqr(constants.unitRadius)) {
+            pickedIds.insert(pickup->loot);
+#ifdef DEBUG_INFO
+        } else {
+            std::cerr << "Unit " << unitId << " can't pick up loot with id " << loot->id << std::endl;
+#endif
+        }
+    }
+    for (size_t i = 0; !pickedIds.empty() && i != game.loot.size(); ++i) {
+        auto& id = game.loot[i].id;
+        if (pickedIds.count(id)) {
+            pickedIds.erase(id);
+            game.loot[i] = game.loot.back();
+            game.loot.pop_back();
+            --i;
+        }
+    }
 
     this->last_tick_game = std::move(game);
 

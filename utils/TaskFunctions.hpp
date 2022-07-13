@@ -84,6 +84,14 @@ std::vector<OrderType> ApplyLookTo(const Vec2 point, POrder &order) {
     return {OrderType::kRotate};
 }
 
+std::vector<OrderType> ApplyPickUp(const Unit& unit, const Loot& loot, POrder &order) {
+    if ((loot.position - unit.position).sqrNorm() > sqr(Constants::INSTANCE.unitRadius)) {
+        return {};
+    }
+    order.action = std::make_shared<ActionOrder::Pickup>(loot.id);
+    return {OrderType::kAction};
+}
+
 std::vector<OrderType> ApplyMoveTo(const Unit &unit,
                                    const Vec2 newPosition,
                                    const VisibleFilter& filter,
@@ -117,7 +125,9 @@ ApplyMoveToUnitTask(const Unit &unit, const Unit &target, std::unordered_map<int
         const Vec2 newDirection = Vec2{startingAngle + angleDiff} * currentWeaponDistance;
         const Vec2 newPosition = target.position + newDirection;
         if (IsVisible<VisionFilter::kShootFilter>(newPosition, -newDirection, 100., target.position, myFilter)) {
-            const double maxSpeed = std::max((target.position - unit.position).norm() - currentWeaponDistance, 0.) + 1;
+            const double distance = (target.position - unit.position).norm();
+            const double maxSpeed = currentWeaponDistance > distance ? std::numeric_limits<double>::infinity() :
+                                    std::max(distance - currentWeaponDistance, 0.) + 1;
             return ApplyMoveTo(unit, newPosition, myFilter, maxSpeed, order);
         }
     }

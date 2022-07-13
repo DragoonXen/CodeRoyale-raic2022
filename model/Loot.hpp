@@ -10,6 +10,12 @@
 
 namespace model {
 
+    enum LootType {
+        Weapon,
+        ShieldPotions,
+        Ammo
+    };
+
 // Loot lying on the ground
 class Loot {
 public:
@@ -18,7 +24,7 @@ public:
     // Position
     model::Vec2 position;
 
-    int tag;
+    LootType tag;
     // Weapon type index (starting with 0)
     int weaponTypeIndex;
     // Amount of ammo
@@ -26,7 +32,7 @@ public:
 
     int lastSeenTick;
 
-    Loot(int id, model::Vec2 position, int tag, int weaponTypeIndex, int amount);
+    Loot(int id, model::Vec2 position, LootType tag, int weaponTypeIndex, int amount);
 
     // Read Loot from input stream
     static Loot readFrom(InputStream& stream);
