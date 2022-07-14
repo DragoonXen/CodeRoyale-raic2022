@@ -74,6 +74,43 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
     myUnits = filterUnits(game.units, my_units_filter);
     auto enemyUnits = filterUnits(game.units, enemies_filter);
 
+    std::unordered_map<int, std::unordered_map<int, double>> unitDanger;
+    for (const auto& unit: myUnits) {
+        unitDanger[unit->id] = std::unordered_map<int, double>();
+        auto &myUnitMap = unitDanger[unit->id];
+        for (const auto &enemyUnit: enemyUnits) {
+             double danger = 1.;
+            const Vec2 distanceVec = unit->position - enemyUnit->position;
+            // angle danger
+            const double angleDiff = std::abs(AngleDiff(enemyUnit->direction.toRadians(), distanceVec.toRadians()));
+            // normalize from 0 to M_PI * 5 / 6
+            const auto diff = std::min(std::max(angleDiff - (M_PI / 6), 0.), M_PI * 2 / 3);
+            danger *= 1. - diff / (M_PI * 5 / 6);
+            // distance danger
+            constexpr double maxDangerDistance = 7.;
+            const double distance = distanceVec.norm();
+            const double dangerDistanceCheck = maxDangerDistance / std::max(distance, maxDangerDistance);
+            danger *= dangerDistanceCheck;
+            // weapon danger
+            if (enemyUnit->weapon && enemyUnit->ammo[*enemyUnit->weapon] > 0) {
+                constexpr double kWeaponDanger[] = {0.34, .6666, 1.};
+                danger *= kWeaponDanger[*enemyUnit->weapon];
+                if (*enemyUnit->weapon == 2 && distance < 10.) {
+                    danger *= 1.55;
+                }
+            } else {
+                danger *= 1e-2;
+            }
+            myUnitMap[enemyUnit->id] = danger;
+//            DRAW({
+//                     debugInterface->addPlacedText(enemyUnit->position + distanceVec * .5,
+//                                                   std::to_string(enemyUnit->id) + " danger " + std::to_string(danger),
+//                                                   {0.5, 0.5}, 0.7,
+//                                                   debugging::Color(0.8, 0, 0, 1.));
+//                 });
+        }
+    }
+
     DRAW({
              for (auto &unit: game.units) {
                  debugInterface->addPlacedText(unit.position + model::Vec2{1., 1.},
@@ -172,7 +209,7 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
             if (!unit->weapon.has_value() || unit->ammo[*unit->weapon] == 0) {
                 continue;
             }
-             std::vector<std::pair<double, int>> distances;
+            std::vector<std::pair<double, int>> distances;
             distances.reserve(enemyUnits.size());
             for (size_t i = 0; i != enemyUnits.size(); ++i) {
                 const auto& enUnit = enemyUnits[i];
@@ -278,7 +315,7 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
             if ((loot.position - game.zone.currentCenter).sqrNorm() >= sqr(game.zone.currentRadius)) {
                 return false;
             }
-            if (distance <= Constants::INSTANCE.unitRadius) {
+            if (distance <= Constants::INSTANCE.unitRadius && !unit->action) {
                 Task pickTask{6, unit->id,
                               std::to_string(unit->id) + " pick up " + loot.position.toString(),
                               {OrderType::kAction}};
@@ -384,6 +421,10 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
     }
     TimeMeasure::end(5);
 
+    /** ==================================================================================
+     *  Тут начинаются сами действия
+     *  ==================================================================================
+     */
     std::unordered_map<int, POrder> pOrders;
     for (Unit* unit: myUnits) {
         pOrders[unit->id] = POrder();
@@ -553,7 +594,8 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
         }
         auto loot = lootById[pickup->loot];
         auto unit = unitById[unitId];
-        if (unit->playerId == game.myId && (unit->position - loot->position).sqrNorm() <= sqr(constants.unitRadius)) {
+        if (unit->playerId == game.myId && (unit->position - loot->position).sqrNorm() <= sqr(constants.unitRadius) &&
+            !unit->action.has_value()) {
             pickedIds.insert(pickup->loot);
 #ifdef DEBUG_INFO
         } else {

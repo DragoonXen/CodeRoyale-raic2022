@@ -166,6 +166,14 @@ void UpdateUnitFromInfo(Unit& unit, ProjectileUnitsProposals& proposal) {
     unit.playerId = proposal.playerId;
     unit.id = proposal.unitId;
     unit.weapon = proposal.weaponType;
+    if (unit.ammo.empty()) {
+        unit.ammo = {10, 10, 10};
+    } else {
+        --unit.ammo[proposal.weaponType];
+    }
+    Constants& constants = Constants::INSTANCE;
+    unit.nextShotTick =
+            proposal.tick + (constants.ticksPerSecond / constants.weapons[proposal.weaponType].roundsPerSecond + 1e-3);
     unit.lastSeenTick = proposal.tick;
 }
 

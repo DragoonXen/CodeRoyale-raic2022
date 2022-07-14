@@ -51,7 +51,7 @@ ApplyAttackTask(const Unit &unit, const Unit &target, const int currentTick, std
     const double ticksToRotate = angleDiffAbs / rotateSpeed;
 
     // how many ticks until next shot
-     int ticksToPossibleShot = unit.nextShotTick - currentTick;
+    int ticksToPossibleShot = unit.nextShotTick - currentTick;
     if (ticksToRotate < 1 && unit.aim + 1e-5 > 1 && ticksToPossibleShot <= 0 &&
         acceptableWeaponDistance > currentDistance) {
         order.lookPoint = aimTarget;
@@ -94,7 +94,7 @@ std::vector<OrderType> ApplyPickUp(const Unit& unit, const Loot& loot, POrder &o
 
 std::vector<OrderType> ApplyMoveTo(const Unit &unit,
                                    const Vec2 newPosition,
-                                   const VisibleFilter& filter,
+                                   const VisibleFilter &filter,
                                    const double maxSpeed,
                                    POrder &order) {
     auto [obstacle, point] = ClosestIntersectionPoint(unit.position, newPosition, filter.closeObstacles);
