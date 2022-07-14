@@ -252,7 +252,8 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
                 zoneDst = {1., 0};
             }
             const Vec2 moveDirection =
-                    zone.currentCenter + Vec2(zoneDst.toRadians() + M_PI / 6).toLen(zone.currentRadius * .7);
+                    zone.currentCenter + Vec2(zoneDst.toRadians() + M_PI / 6).toLen(
+                            std::max(2., zone.currentRadius - Constants::INSTANCE.viewDistance));
             return ApplyMoveTo(*unit, moveDirection, filter, std::numeric_limits<double>::infinity(), order);
         };
         tasks.push(moveTask);
@@ -410,7 +411,7 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
             continue;
         }
         TimeMeasure::end(7);
-        std::vector<MoveRule> basicRules = [&]() {
+        std::vector<MoveRule> basicRules = [firstProjectile = firstProjectile, &unit, &usedAvoidRule = this->usedAvoidRule, &orderedRule]() {
             std::vector<MoveRule> avoidRules;
             if (usedAvoidRule.count(unit->id)) {
                 avoidRules.push_back(usedAvoidRule[unit->id]);

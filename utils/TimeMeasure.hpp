@@ -4,6 +4,7 @@
 #ifdef TIMING_ENABLED
 
 #include <chrono>
+#include <array>
 
 #endif
 
@@ -21,15 +22,16 @@ namespace TimeMeasure {
         return res;
     }();
 
-    static std::clock_t startTime;
+    static std::chrono::time_point<std::chrono::system_clock> startTime;
 
     inline static void start() {
-        startTime = std::clock();
+        startTime = std::chrono::system_clock::now();
     }
 
     inline static void end(int idx) {
-        timings[idx] += (std::clock() - startTime);
-        startTime = std::clock();
+        timings[idx] += std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::system_clock::now() - startTime).count();
+        startTime = std::chrono::system_clock::now();
     }
 
     inline static void printTimings() {
