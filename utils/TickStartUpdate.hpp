@@ -37,8 +37,18 @@ void UpdateLifetime(Projectile &projectile) {
     }
 }
 
-void UpdateProjectiles(Game &game, std::optional<Game> &last_tick, const std::vector<Unit *> &units,
-                       const std::unordered_map<int, VisibleFilter> &filters) {
+struct ProjectileUnitsProposals {
+    int tick;
+    int unitId;
+    int playerId;
+    Vec2 position;
+    Vec2 direction;
+    int weaponType;
+};
+
+std::unordered_map<int, ProjectileUnitsProposals>
+UpdateProjectiles(Game &game, std::optional<Game> &last_tick, const std::vector<Unit *> &units,
+                  const std::unordered_map<int, VisibleFilter> &filters) {
     std::unordered_map<int, Projectile *> from_prev_tick;
     const Constants &constants = Constants::INSTANCE;
     if (last_tick) {
@@ -49,15 +59,30 @@ void UpdateProjectiles(Game &game, std::optional<Game> &last_tick, const std::ve
             }
         }
     }
-
-    for (auto &curr_shot: game.projectiles) {
-        if (from_prev_tick.count(curr_shot.id)) {
-            curr_shot.lifeTime = from_prev_tick[curr_shot.id]->lifeTime;
-            from_prev_tick.erase(curr_shot.id);
+    std::unordered_map<int, ProjectileUnitsProposals> knownUnitsInfo;
+    for (auto &projectile: game.projectiles) {
+        if (from_prev_tick.count(projectile.id)) {
+            projectile.lifeTime = from_prev_tick[projectile.id]->lifeTime;
+            from_prev_tick.erase(projectile.id);
         } else {
-            UpdateLifetime(curr_shot);
+            const double timeInFly =
+                    constants.weapons[projectile.weaponTypeIndex].projectileLifeTime - projectile.lifeTime;
+            const int tickToShootFrom = game.currentTick - (int) (timeInFly / constants.tickTime + 0.1);
+            auto iter = knownUnitsInfo.find(projectile.shooterId);
+            if (iter == knownUnitsInfo.end() || iter->second.tick < tickToShootFrom) {
+                const auto projectileDir = projectile.velocity.clone().toLen(1.);
+                const auto shootPoint = projectile.position - projectile.velocity * timeInFly -
+                                        projectileDir * constants.unitRadius;
+
+                knownUnitsInfo[projectile.shooterId] =
+                        ProjectileUnitsProposals{tickToShootFrom, projectile.shooterId, projectile.shooterPlayerId,
+                                                 shootPoint, projectileDir, projectile.weaponTypeIndex};
+            }
+
+            UpdateLifetime(projectile);
         }
     }
+
     if (last_tick) {
         for (auto &projectile: last_tick->projectiles) {
             if (!from_prev_tick.count(projectile.id)) {
@@ -88,6 +113,7 @@ void UpdateProjectiles(Game &game, std::optional<Game> &last_tick, const std::ve
                                                    .1);
             }
     );
+    return knownUnitsInfo;
 }
 
 void UpdateLoot(Game &game, std::optional<Game> &last_tick, const std::vector<Unit *> &units,
@@ -131,12 +157,35 @@ void UpdateLoot(Game &game, std::optional<Game> &last_tick, const std::vector<Un
     );
 }
 
-void UpdateUnits(Game &game, std::optional<Game> &last_tick, const std::vector<Unit *> &units,
-                 const std::unordered_map<int, VisibleFilter> &filters) {
+void UpdateUnitFromInfo(Unit& unit, ProjectileUnitsProposals& proposal) {
+    if (unit.lastSeenTick > proposal.tick) {
+        return;
+    }
+    unit.position = proposal.position;
+    unit.direction = proposal.direction;
+    unit.playerId = proposal.playerId;
+    unit.id = proposal.unitId;
+    unit.weapon = proposal.weaponType;
+    unit.lastSeenTick = proposal.tick;
+}
+
+void UpdateUnits(Game &game, std::optional<Game> &lastTick, const std::vector<Unit *> &units,
+                 const std::unordered_map<int, VisibleFilter> &filters,
+                 std::unordered_map<int, ProjectileUnitsProposals> projectilesUnitInfo) {
+    DRAW(for (auto &[id, info]: projectilesUnitInfo) {
+        debugInterface->addCircle(info.position, Constants::INSTANCE.unitRadius,
+                                  debugging::Color(1., 0., 0., .3));
+        debugInterface->addSegment(info.position, info.position + info.direction, .1, debugging::Color(0., 0., 0., .7));
+        debugInterface->addPlacedText(info.position + model::Vec2{0., 1},
+                                      "su " + std::to_string(info.unitId) + "\n p " + std::to_string(info.playerId) +
+                                      "\nt " + std::to_string(info.tick),
+                                      {0., 1.}, 0.3,
+                                      debugging::Color(0, 0, 0, 1));
+    });
     std::unordered_map<int, Unit *> from_prev_tick;
     const Constants &constants = Constants::INSTANCE;
-    if (last_tick) {
-        for (auto &unit: last_tick->units) {
+    if (lastTick) {
+        for (auto &unit: lastTick->units) {
             if (unit.lastSeenTick + kUnitExpiration < game.currentTick) {
                 continue;
             }
@@ -148,13 +197,19 @@ void UpdateUnits(Game &game, std::optional<Game> &last_tick, const std::vector<U
         if (from_prev_tick.count(unit.id)) {
             from_prev_tick.erase(unit.id);
         }
+        projectilesUnitInfo.erase(unit.id);
         unit.lastSeenTick = game.currentTick;
     }
-    if (last_tick) {
+
+    if (lastTick) {
         std::vector<Unit*> unitsToAdd;
-        for (auto &unit: last_tick->units) {
+        for (auto &unit: lastTick->units) {
             if (!from_prev_tick.count(unit.id)) {
                 continue;
+            }
+            if (auto iter = projectilesUnitInfo.find(unit.id); iter != projectilesUnitInfo.end()) {
+                UpdateUnitFromInfo(unit, iter->second);
+                projectilesUnitInfo.erase(iter);
             }
             if (!IsVisible<kVisibilityFilter>(unit.position, units, filters)) {
                 DRAW(debugInterface->addCircle(unit.position, 1.3, debugging::Color(0., 1., 0., .3)););
@@ -164,6 +219,13 @@ void UpdateUnits(Game &game, std::optional<Game> &last_tick, const std::vector<U
         for (auto unit: unitsToAdd) {
             game.units.push_back(*unit);
         }
+    }
+    for (auto &[id, info]: projectilesUnitInfo) {
+        Unit unit;
+        unit.id = id;
+        unit.lastSeenTick = 0;
+        UpdateUnitFromInfo(unit, info);
+        game.units.push_back(unit);
     }
 }
 

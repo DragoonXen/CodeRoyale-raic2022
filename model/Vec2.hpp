@@ -83,6 +83,10 @@ public:
         return sqrNorm() > val * val ? toLen(val) : *this;
     }
 
+    Vec2 clone() const {
+        return *this;
+    }
+
     double norm() const {
         return std::sqrt(sqrNorm());
     }

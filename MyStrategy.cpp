@@ -62,12 +62,14 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
         visibilityFilters[unit->id] = FilterObstacles(unit->position, unit->direction, unit->currentFieldOfView);
     }
 
-    TimeMeasure::end(1);
-    UpdateProjectiles(game, last_tick_game, myUnits, visibilityFilters);
-    TimeMeasure::end(2);
-    UpdateLoot(game, last_tick_game, myUnits, visibilityFilters);
-    TimeMeasure::end(3);
-    UpdateUnits(game, last_tick_game, myUnits, visibilityFilters);
+    {
+        TimeMeasure::end(1);
+        auto projectilesUnitInfo = UpdateProjectiles(game, last_tick_game, myUnits, visibilityFilters);
+        TimeMeasure::end(2);
+        UpdateLoot(game, last_tick_game, myUnits, visibilityFilters);
+        TimeMeasure::end(3);
+        UpdateUnits(game, last_tick_game, myUnits, visibilityFilters, std::move(projectilesUnitInfo));
+    }
     TimeMeasure::end(4);
     myUnits = filterUnits(game.units, my_units_filter);
     auto enemyUnits = filterUnits(game.units, enemies_filter);
@@ -419,6 +421,7 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
             }
             constexpr double kMoveLength = 30.;
             if (firstProjectile != nullptr) {
+                // TODO: possible a better directions
                 Vec2 norm = {firstProjectile->velocity.y, -firstProjectile->velocity.x};
                 if ((unit->velocity - norm).sqrNorm() > (unit->velocity + norm).sqrNorm()) {
                     norm = -norm;
