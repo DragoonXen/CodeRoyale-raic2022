@@ -177,7 +177,11 @@ inline UnitOrder ApplyAvoidRule(Unit& unit, const MoveRule& selected_rule) {
     order.targetDirection = unit.direction;
     order.targetVelocity = velocity;
     unit.velocity = ResultSpeedVector(unit.velocity, velocity);
-    updateForCollision(unit.position, unit.velocity);
+    if (unit.remainingSpawnTime.has_value() || unit.velocity.sqrNorm() < 1e-20) {
+        unit.position += velocity * Constants::INSTANCE.tickTime;
+    } else {
+        updateForCollision(unit.position, unit.velocity);
+    }
     return order;
 }
 

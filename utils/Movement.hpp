@@ -117,7 +117,7 @@ inline Vec2 applyNewDirection(Vec2 currentDirection, Vec2 targetDirection, const
 inline void updateForCollision(Vec2& position, Vec2& velocity) {
     const Constants& constants = Constants::INSTANCE;
     const auto& obstacles = constants.Get(position);
-    double time_remained = 1. / constants.ticksPerSecond;
+    double time_remained = constants.tickTime;
 
     const auto nextMove = [&](const std::optional<int> prev_collision) -> std::optional<int> {
         const auto &[obstacle, point] = GetClosestCollision(position,
