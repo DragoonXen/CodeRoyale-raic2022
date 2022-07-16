@@ -107,6 +107,7 @@ std::vector<OrderType> ApplyMoveTo(const Unit &unit,
                                    const VisibleFilter &filter,
                                    const double maxSpeed,
                                    POrder &order) {
+    DRAW(DrawCross(newPosition, 0.5, debugging::Color(1., 0., 1., 0.5), debugInterface););
     auto [obstacle, point] = ClosestIntersectionPoint(unit.position, newPosition, filter.closeObstacles);
     if (obstacle == nullptr) {
         order.movePoint = newPosition;

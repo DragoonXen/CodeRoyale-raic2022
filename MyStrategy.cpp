@@ -199,29 +199,6 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
         unitById[unit.id] = &unit;
     }
     std::unordered_map<int, const Loot*> lootById;
-    std::vector<std::pair<double, int>> ammos;
-    std::vector<std::pair<double, int>> weapons;
-    std::vector<std::pair<double, int>> shieldPotions;
-    for (size_t i = 0; i != game.loot.size(); ++i) {
-        const auto& loot = game.loot[i];
-        lootById[loot.id] = &loot;
-        const double distance = (centerPoint - loot.position).norm();
-        switch (loot.tag) {
-            case LootType::Weapon:
-                weapons.emplace_back(distance, i);
-                break;
-            case LootType::ShieldPotions:
-                shieldPotions.emplace_back(distance, i);
-                break;
-            case LootType::Ammo:
-                ammos.emplace_back(distance, i);
-                break;
-        }
-    }
-    std::sort(weapons.begin(), weapons.end());
-    std::sort(ammos.begin(), ammos.end());
-    std::sort(shieldPotions.begin(), shieldPotions.end());
-
     std::priority_queue<Task> tasks;
     if (!enemyUnits.empty()) {
         for (const Unit* unit: myUnits) {
@@ -232,11 +209,17 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
             distances.reserve(enemyUnits.size());
             for (size_t i = 0; i != enemyUnits.size(); ++i) {
                 const auto& enUnit = enemyUnits[i];
-                distances.emplace_back((unit->position - enUnit->position).sqrNorm(), i);
+                const double distanceSqr = (unit->position - enUnit->position).sqrNorm();
+                if (enUnit->remainingSpawnTime.has_value() &&
+                    (enUnit->position - unit->position).norm() / constants.weapons[*unit->weapon].projectileSpeed <
+                    *enUnit->remainingSpawnTime) {
+                    continue;
+                }
+                distances.emplace_back(distanceSqr, i);
             }
             std::sort(distances.begin(), distances.end());
-            for (const auto& item : distances) {
-                 const auto& enUnit = enemyUnits[item.second];
+            for (const auto &item: distances) {
+                const auto &enUnit = enemyUnits[item.second];
                 Task moveTask{1, unit->id,
                               std::to_string(unit->id) + " move to attack enemy " + std::to_string(enUnit->id),
                               {OrderType::kMove}};
@@ -264,7 +247,8 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
                                 {OrderType::kAction, OrderType::kRotate}};
 
                 attackTask.score = moveTask.score;
-                attackTask.func = [unit, enUnit, tick = game.currentTick, &visibilityFilters](POrder &order) -> std::vector<OrderType> {
+                attackTask.func = [unit, enUnit, tick = game.currentTick, &visibilityFilters](
+                        POrder &order) -> std::vector<OrderType> {
                     return ApplyAttackTask(*unit, *enUnit, tick, visibilityFilters, order);
                 };
                 tasks.push(attackTask);
@@ -330,6 +314,29 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
         };
         tasks.push(lookTask);
     }
+    std::vector<std::pair<double, int>> ammos;
+    std::vector<std::pair<double, int>> weapons;
+    std::vector<std::pair<double, int>> shieldPotions;
+    for (size_t i = 0; i != game.loot.size(); ++i) {
+        const auto &loot = game.loot[i];
+        lootById[loot.id] = &loot;
+        const double distance = (centerPoint - loot.position).norm();
+        switch (loot.tag) {
+            case LootType::Weapon:
+                weapons.emplace_back(distance, i);
+                break;
+            case LootType::ShieldPotions:
+                shieldPotions.emplace_back(distance, i);
+                break;
+            case LootType::Ammo:
+                ammos.emplace_back(distance, i);
+                break;
+        }
+    }
+    std::sort(weapons.begin(), weapons.end());
+    std::sort(ammos.begin(), ammos.end());
+    std::sort(shieldPotions.begin(), shieldPotions.end());
+
     // loot && potions usage
     for (const Unit *unit: myUnits) {
         const auto pickTask = [&unit, &visibilityFilters, &tasks, &game](const double distance, const Loot &loot,
@@ -343,17 +350,19 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
                               loot.position.toString(),
                               {OrderType::kAction}};
                 pickTask.score = priority;
+                pickTask.taskData = loot.id;
                 pickTask.func = [unit, &loot](
                         POrder &order) -> std::vector<OrderType> {
                     return ApplyPickUp(*unit, loot, order);
                 };
                 tasks.push(pickTask);
             } else {
-                Task moveTask{7, unit->id,
+                Task moveTask{6, unit->id,
                               std::to_string(unit->id) + " move to pick up " + std::to_string(loot.id) + "|" +
                               loot.position.toString(),
                               {OrderType::kMove}};
                 moveTask.score = priority / std::max(distance, 1.);
+                moveTask.taskData = loot.id;
                 moveTask.func = [unit, &loot, &visibilityFilters](
                         POrder &order) -> std::vector<OrderType> {
                     return ApplyMoveTo(*unit, loot.position, visibilityFilters[unit->id],
@@ -364,17 +373,20 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
             return true;
         };
         const auto pickWeapon =
-                [&weapons, &game, &pickTask](int weaponType, double priority) {
+                [&weapons, &game, &pickTask, unit](int weaponType, double priority) {
                      if (priority <= 0.) {
                         return;
                     }
+                    size_t count = 3;
                     for (const auto &weapon: weapons) {
                         const Loot &loot = game.loot[weapon.second];
                         if (loot.weaponTypeIndex != weaponType) {
                             continue;
                         }
-                        if (pickTask(weapon.first, loot, priority)) {
-                            return;
+                        if (pickTask((unit->position - loot.position).norm(), loot, priority)) {
+                            if (--count == 0) {
+                                return;
+                            }
                         }
                     }
                 };
@@ -398,19 +410,14 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
                     continue;
                 }
                 const double portion = diff / (double) constants.weapons[i].maxInventoryAmmo;
-                int maxAmmo = 0;
                 for (auto &item: ammos) {
                     const Loot &loot = game.loot[item.second];
-                    if (loot.weaponTypeIndex != i || loot.amount <= maxAmmo) {
+                    if (loot.weaponTypeIndex != i) {
                         continue;
                     }
-                    if (pickTask(item.first, loot, priority[i] * std::min(loot.amount, diff) * sqr(portion) /
-                                                   Constants::INSTANCE.weapons[i].maxInventoryAmmo)) {
-                        maxAmmo = loot.amount;
-                        if (maxAmmo >= diff) {
-                            break;
-                        }
-                    }
+                    pickTask((unit->position - loot.position).norm(), loot,
+                             priority[i] * std::min(loot.amount, diff) * sqr(portion) /
+                             Constants::INSTANCE.weapons[i].maxInventoryAmmo);
                 }
             }
         }
@@ -429,17 +436,9 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
         if (unit->shieldPotions < constants.maxShieldPotionsInInventory) {
             int diff = constants.maxShieldPotionsInInventory - unit->shieldPotions;
             // 200
-            int maxPotions = 0;
             for (auto &item: shieldPotions) {
                 const Loot &loot = game.loot[item.second];
-                if (loot.amount <= maxPotions) {
-                    continue;
-                }
-                maxPotions = loot.amount;
-                pickTask(item.first, loot, 200 * std::min(loot.amount, diff) * sqr(diff));
-                if (maxPotions >= diff) {
-                    break;
-                }
+                pickTask((unit->position - loot.position).norm(), loot, 200 * std::min(loot.amount, diff) * sqr(diff));
             }
         }
     }
@@ -535,10 +534,26 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
     for (Unit* unit: myUnits) {
         pOrders[unit->id] = POrder();
     }
+    std::unordered_map<int, std::function<bool(const std::any&, const std::any&)>> taskFilter;
+    taskFilter[6] = [](const std::any &newTask, const std::any &applied) -> bool {
+        return std::any_cast<int>(newTask) == std::any_cast<int>(applied);
+    };
+    std::unordered_map<int, std::vector<std::any>> usedData;
     for (;!tasks.empty(); tasks.pop()) {
         const auto& task = tasks.top();
         POrder& curr = pOrders[task.unitId];
         if (!curr.IsAbleToAcceptTask(task.actionTypes)) {
+            continue;
+        }
+        if (task.taskData.has_value() && [&taskFilter, &usedData, &task]() {
+            const auto &filter = taskFilter[task.type];
+            for (const auto &value: usedData[task.type]) {
+                if (filter(task.taskData, value)) {
+                    return true;
+                }
+            }
+            return false;
+        }()) {
             continue;
         }
 #ifdef TICK_DEBUG_ENABLED
@@ -546,7 +561,9 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
             std::cerr << "[No function implemented]: " << task.type << ": " << task.description << std::endl;
         }
 #endif
-        curr.Accept(task.func(curr), task.type, task.description);
+        if (curr.Accept(task.func(curr), task.type, task.description) && task.taskData.has_value()) {
+            usedData.try_emplace(task.type).first->second.push_back(task.taskData);
+        }
     }
     TimeMeasure::end(6);
 

@@ -9,6 +9,7 @@
 #include <optional>
 #include <functional>
 #include "model/Vec2.hpp"
+#include <any>
 
 namespace {
     using namespace model;
@@ -43,11 +44,12 @@ struct POrder {
         return true;
     }
 
-    inline void Accept(const std::vector<OrderType> &orderTypes, int ruleId, const std::string& taskDescription) {
+    inline bool Accept(const std::vector<OrderType> &orderTypes, int ruleId, const std::string& taskDescription) {
         for (auto &type: orderTypes) {
             picked[(int) type] = ruleId;
             this->description[(int) type] = taskDescription;
         }
+        return !orderTypes.empty();
     }
 
     inline MoveRule toMoveRule() const {
@@ -68,12 +70,14 @@ struct Task {
     int type;
     int unitId;
     std::vector<OrderType> actionTypes;
+    std::any taskData;
 
     explicit Task(int type, int unitId, std::string description, std::vector<OrderType> actionTypes) :
             type(type),
             description(std::move(description)),
             unitId(unitId),
-            actionTypes(std::move(actionTypes)) {}
+            actionTypes(std::move(actionTypes)),
+            taskData() {}
 
     double score;
 
