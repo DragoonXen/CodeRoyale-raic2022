@@ -314,31 +314,30 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
         };
         tasks.push(lookTask);
     }
-    std::vector<std::pair<double, int>> ammos;
-    std::vector<std::pair<double, int>> weapons;
-    std::vector<std::pair<double, int>> shieldPotions;
-    for (size_t i = 0; i != game.loot.size(); ++i) {
-        const auto &loot = game.loot[i];
-        lootById[loot.id] = &loot;
-        const double distance = (centerPoint - loot.position).norm();
-        switch (loot.tag) {
-            case LootType::Weapon:
-                weapons.emplace_back(distance, i);
-                break;
-            case LootType::ShieldPotions:
-                shieldPotions.emplace_back(distance, i);
-                break;
-            case LootType::Ammo:
-                ammos.emplace_back(distance, i);
-                break;
-        }
-    }
-    std::sort(weapons.begin(), weapons.end());
-    std::sort(ammos.begin(), ammos.end());
-    std::sort(shieldPotions.begin(), shieldPotions.end());
-
     // loot && potions usage
     for (const Unit *unit: myUnits) {
+        std::vector<std::pair<double, int>> ammos;
+        std::vector<std::pair<double, int>> weapons;
+        std::vector<std::pair<double, int>> shieldPotions;
+        for (size_t i = 0; i != game.loot.size(); ++i) {
+            const auto &loot = game.loot[i];
+            lootById[loot.id] = &loot;
+            const double distance = (unit->position - loot.position).norm();
+            switch (loot.tag) {
+                case LootType::Weapon:
+                    weapons.emplace_back(distance, i);
+                    break;
+                case LootType::ShieldPotions:
+                    shieldPotions.emplace_back(distance, i);
+                    break;
+                case LootType::Ammo:
+                    ammos.emplace_back(distance, i);
+                    break;
+            }
+        }
+        std::sort(weapons.begin(), weapons.end());
+        std::sort(ammos.begin(), ammos.end());
+        std::sort(shieldPotions.begin(), shieldPotions.end());
         const auto pickTask = [&unit, &visibilityFilters, &tasks, &game](const double distance, const Loot &loot,
                                                                   const double priority) {
             if ((loot.position - game.zone.currentCenter).sqrNorm() >= sqr(game.zone.currentRadius)) {
@@ -643,74 +642,7 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
         debugActions(pOrder, *unit, (int) ruleId);
         TimeMeasure::end(8);
     }
-
     TimeMeasure::end(7);
-
-
-//    std::unordered_map<int, model::UnitOrder> orders;
-//    for (const auto &unit: myUnits) {
-//        /** AVOID LOGIC **/
-//        if (point_move_to) {
-//            const auto [resultUnit, damageScore, firstProjectile] = Simulate(*unit, game, *point_move_to, point_look_to,
-//                                                                             false);
-//            if (damageScore != 0.) {
-//                Vec2 norm = {firstProjectile->velocity.y, -firstProjectile->velocity.x};
-//                if ((unit->velocity - norm).sqrNorm() > (unit->velocity + norm).sqrNorm()) {
-//                    norm = -norm;
-//                }
-//                std::vector<MoveRule> avoidRules;
-//                constexpr double kMoveLength = 30.;
-//                avoidRules.push_back({unit->position + norm.toLen(kMoveLength), point_look_to, false,
-//                                      std::numeric_limits<double>::infinity()});
-//                avoidRules.push_back({unit->position - norm.toLen(kMoveLength), point_look_to, false,
-//                                      std::numeric_limits<double>::infinity()});
-//                for (const auto &dir: kMoveDirections) {
-//                    avoidRules.push_back({unit->position + dir * kMoveLength, point_look_to, false,
-//                                          std::numeric_limits<double>::infinity()});
-//                }
-//                avoidRules.push_back(
-//                        {unit->position + norm.toLen(kMoveLength), unit->position + norm.toLen(kMoveLength), false,
-//                         std::numeric_limits<double>::infinity()});
-//                avoidRules.push_back(
-//                        {unit->position - norm.toLen(kMoveLength), unit->position - norm.toLen(kMoveLength), false,
-//                         std::numeric_limits<double>::infinity()});
-//                for (const auto &dir: kMoveDirections) {
-//                    Vec2 to = unit->position + dir * kMoveLength;
-//                    avoidRules.push_back({to, to, false, std::numeric_limits<double>::infinity()});
-//                }
-//                size_t rule_id = ChooseBest(*unit, game, avoidRules);
-//                orders[unit->id] = ApplyAvoidRule(*unit, avoidRules[rule_id]);
-//                continue;
-//            }
-//        }
-//
-//        model::UnitOrder order(*unit);
-//        if (point_look_to) {
-//            order.targetDirection = *point_look_to - unit->position;
-//            unit->direction = applyNewDirection(unit->direction, order.targetDirection,
-//                                                RotationSpeed(unit->aim, unit->weapon));
-//        }
-//        // aim
-//        if (point_move_to) {
-//            const auto vector = MaxSpeedVector(unit->position, unit->direction, *point_move_to,
-//                                               CalcAimSpeedModifier(*unit));
-//            order.targetVelocity = vector;
-//            unit->velocity = ResultSpeedVector(unit->velocity, vector);
-//            updateForCollision(unit->position, unit->velocity);
-//        }
-//
-////        for (const auto &target: kMoveDirections) {
-////            const auto point = unit->position + target.toLen(30);
-////            const auto vector = MaxSpeedVector(unit->position, unit->direction, point, constants);
-//////            DRAW(
-//////                    debugInterface->addGradientSegment(unit->position, debugging::Color(1., 0., 0., 1.),
-//////                                                       unit->position + vector, debugging::Color(0., 1., 0., 1.), .1);
-//////            );
-////        }
-//
-//        orders[unit->id] = std::move(order);
-//    }
-
 
     // remove picker loot
     std::unordered_set<int> pickedIds;
