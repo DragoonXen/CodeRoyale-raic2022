@@ -29,6 +29,25 @@ namespace {
         });
         return result;
     }
+
+    void debugActions(const POrder &pOrder, const Unit &unit, int avoidance) {
+        DRAW({
+                 std::stringstream result;
+                 for (size_t i = 0; i != (int) OrderType::kItemsCount; ++i) {
+                     if (pOrder.picked[i] == -1) {
+                         continue;
+                     }
+                     result << pOrder.picked[i] << ": " << pOrder.description[i] << std::endl;
+                 }
+                 if (avoidance != -1) {
+                     result << avoidance;
+                 }
+                 debugInterface->addPlacedText(unit.position - Vec2{1., -1},
+                                               result.str(),
+                                               {1., 1.}, 0.7,
+                                               debugging::Color(0, 0, 0, 1));
+             });
+    }
 }
 
 MyStrategy::MyStrategy(const model::Constants &constants) {
@@ -218,27 +237,18 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
             std::sort(distances.begin(), distances.end());
             for (const auto& item : distances) {
                  const auto& enUnit = enemyUnits[item.second];
-                Task attackTask{0, unit->id,
-                                std::to_string(unit->id) + " attack enemy " + std::to_string(enUnit->id),
-                                {OrderType::kAction, OrderType::kRotate}};
-                constexpr double kMaxDangerDistanceSqr = 64.;
-                attackTask.score = kMaxDangerDistanceSqr * 1000. / std::max(kMaxDangerDistanceSqr, item.first);
-                if (!IsVisible<VisionFilter::kShootFilter>(unit->position, unit->direction, unit->currentFieldOfView,
-                                                           enUnit->position, visibilityFilters[unit->id])) {
-                    attackTask.score /= 10.;
-                }
-                if (enUnit->shield + enUnit->health < constants.weapons[*unit->weapon].projectileDamage + 1e-5) {
-                    attackTask.score *= 100.;
-                }
-                attackTask.func = [unit, enUnit, tick = game.currentTick, &visibilityFilters](POrder &order) -> std::vector<OrderType> {
-                    return ApplyAttackTask(*unit, *enUnit, tick, visibilityFilters, order);
-                };
-                tasks.push(attackTask);
-
                 Task moveTask{1, unit->id,
                               std::to_string(unit->id) + " move to attack enemy " + std::to_string(enUnit->id),
                               {OrderType::kMove}};
-                moveTask.score = attackTask.score;
+                constexpr double kMaxDangerDistanceSqr = 64.;
+                moveTask.score = kMaxDangerDistanceSqr * 1000. / std::max(kMaxDangerDistanceSqr, item.first);
+                if (!IsVisible<VisionFilter::kShootFilter>(unit->position, unit->direction, unit->currentFieldOfView,
+                                                           enUnit->position, visibilityFilters[unit->id])) {
+                    moveTask.score /= 10.;
+                }
+                if (enUnit->shield + enUnit->health < constants.weapons[*unit->weapon].projectileDamage + 1e-5) {
+                    moveTask.score *= 100.;
+                }
 //                if (!IsReachable(unit->position, enUnit->position, visibilityFilters[unit->id])) {
 //                    moveTask.score /= 10.;
 //                }
@@ -246,6 +256,18 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
                     return ApplyMoveToUnitTask(*unit, *enUnit, visibilityFilters, order);
                 };
                 tasks.push(moveTask);
+                if (item.first > 30. * 30.) { // no attack task fot this case. Going to danger control task, type 9
+                    continue;
+                }
+                Task attackTask{0, unit->id,
+                                std::to_string(unit->id) + " attack enemy " + std::to_string(enUnit->id),
+                                {OrderType::kAction, OrderType::kRotate}};
+
+                attackTask.score = moveTask.score;
+                attackTask.func = [unit, enUnit, tick = game.currentTick, &visibilityFilters](POrder &order) -> std::vector<OrderType> {
+                    return ApplyAttackTask(*unit, *enUnit, tick, visibilityFilters, order);
+                };
+                tasks.push(attackTask);
             };
         }
     }
@@ -315,9 +337,10 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
             if ((loot.position - game.zone.currentCenter).sqrNorm() >= sqr(game.zone.currentRadius)) {
                 return false;
             }
-            if (distance <= Constants::INSTANCE.unitRadius && !unit->action) {
+            if (distance <= Constants::INSTANCE.unitRadius && !unit->action && !unit->remainingSpawnTime) {
                 Task pickTask{6, unit->id,
-                              std::to_string(unit->id) + " pick up " + loot.position.toString(),
+                              std::to_string(unit->id) + " pick up " + std::to_string(loot.id) + "|" +
+                              loot.position.toString(),
                               {OrderType::kAction}};
                 pickTask.score = priority;
                 pickTask.func = [unit, &loot](
@@ -327,7 +350,8 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
                 tasks.push(pickTask);
             } else {
                 Task moveTask{7, unit->id,
-                              std::to_string(unit->id) + " move to pick up " + loot.position.toString(),
+                              std::to_string(unit->id) + " move to pick up " + std::to_string(loot.id) + "|" +
+                              loot.position.toString(),
                               {OrderType::kMove}};
                 moveTask.score = priority / std::max(distance, 1.);
                 moveTask.func = [unit, &loot, &visibilityFilters](
@@ -419,6 +443,69 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
             }
         }
     }
+    /** ==================================================================================
+     *  Danger control
+     *  ==================================================================================
+     */
+    for (const Unit *unit: myUnits) {
+        auto &dangerList = unitDanger[unit->id];
+
+        double dangerSum = 0.;
+        for (auto &[id, danger]: dangerList) {
+            dangerSum += danger;
+        }
+        if (dangerSum < 1e-2) {
+            continue;
+        }
+        auto& filteredObstacles = visibilityFilters[unit->id].closeObstacles;
+        //constants.fieldOfView;
+        const auto currDirection = unit->direction.toRadians();
+        for (const auto& enUnit : enemyUnits) {
+            const Vec2 diff = enUnit->position - unit->position;
+            if (diff.sqrNorm() > sqr(55.)) {
+                continue;
+            }
+
+            const auto angle = IncreaseAngle((enUnit->position - unit->position).toRadians(), M_PI * 2);
+            const auto proposedLeftAngle = angle - unit->currentFieldOfView;
+            const auto proposedRightAngle = angle + unit->currentFieldOfView;
+            //bool IsVisible(Vec2 position, double lessAngle, double moreAngle, Vec2 point,
+            //               const std::vector<const Obstacle *> &obstacleVector) {
+            const auto GetDanger = [&enemyUnits, &dangerList, &unit, &filteredObstacles]
+                    (double leftAngle, double rightAngle) {
+                double danger = 0.;
+                for (const auto &checkUnit: enemyUnits) {
+                    if (IsVisible<VisionFilter::kVisibilityFilter>(unit->position, leftAngle, rightAngle,
+                                                                   checkUnit->position, filteredObstacles)) {
+                        danger += dangerList[checkUnit->id];
+                    }
+                }
+                return danger;
+            };
+            {
+                Task dangerControl{9, unit->id,
+                                   std::to_string(unit->id) + " right danger control of " + std::to_string(enUnit->id),
+                                   {OrderType::kRotate}};
+                dangerControl.score = GetDanger(proposedLeftAngle, angle);
+                dangerControl.func = [unit, resultAngle = (proposedLeftAngle + angle) * .5](
+                        POrder &order) -> std::vector<OrderType> {
+                    return ApplyLookTo(unit->position + Vec2{resultAngle} * 30., order);
+                };
+                tasks.push(dangerControl);
+            }
+            {
+                Task dangerControl{9, unit->id,
+                                   std::to_string(unit->id) + " left danger control of " + std::to_string(enUnit->id),
+                                   {OrderType::kRotate}};
+                dangerControl.score = GetDanger(angle, proposedRightAngle);
+                dangerControl.func = [unit, resultAngle = (proposedRightAngle + angle) * .5](
+                        POrder &order) -> std::vector<OrderType> {
+                    return ApplyLookTo(unit->position + Vec2{resultAngle} * 30., order);
+                };
+                tasks.push(dangerControl);
+            }
+        }
+    }
     TimeMeasure::end(5);
 
     /** ==================================================================================
@@ -435,7 +522,12 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
         if (!curr.IsAbleToAcceptTask(task.actionTypes)) {
             continue;
         }
-        curr.Accept(task.func(curr), task.type);
+#ifdef TICK_DEBUG_ENABLED
+        if (task.func == nullptr) {
+            std::cerr << "[No function implemented]: " << task.type << ": " << task.description << std::endl;
+        }
+#endif
+        curr.Accept(task.func(curr), task.type, task.description);
     }
     TimeMeasure::end(6);
 
@@ -450,6 +542,7 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
             order.action = pOrder.action;
 //            std::cerr << order.toString() << std::endl;
             orders[unit->id] = order;
+            debugActions(pOrder, *unit, -1);
             usedAvoidRule.erase(unit->id);
             continue;
         }
@@ -504,13 +597,14 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
             }
         }
 
-        auto [score, rule_id] = ChooseBest(*unit, game, complexRules);
-        auto order = ApplyAvoidRule(*unit, complexRules[rule_id].storage.front());
-        if (complexRules[rule_id].storage.front().keepAim == orderedRule.keepAim) {
+        auto [score, ruleId] = ChooseBest(*unit, game, complexRules);
+        auto order = ApplyAvoidRule(*unit, complexRules[ruleId].storage.front());
+        if (complexRules[ruleId].storage.front().keepAim == orderedRule.keepAim) {
             order.action = pOrder.action;
         }
         orders[unit->id] = order;
-        usedAvoidRule[unit->id] = complexRules[rule_id].storage.back();
+        usedAvoidRule[unit->id] = complexRules[ruleId].storage.back();
+        debugActions(pOrder, *unit, (int) ruleId);
         TimeMeasure::end(8);
     }
 
@@ -594,7 +688,8 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
         }
         auto loot = lootById[pickup->loot];
         auto unit = unitById[unitId];
-        if (unit->playerId == game.myId && (unit->position - loot->position).sqrNorm() <= sqr(constants.unitRadius) &&
+        if (unit->playerId == game.myId && !unit->remainingSpawnTime.has_value() &&
+            (unit->position - loot->position).sqrNorm() <= sqr(constants.unitRadius) &&
             !unit->action.has_value()) {
             pickedIds.insert(pickup->loot);
 #ifdef DEBUG_INFO

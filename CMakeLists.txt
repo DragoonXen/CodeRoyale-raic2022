@@ -50,7 +50,7 @@ set(HEADERS
     "utils/Visible.hpp"
     "utils/TickStartUpdate.hpp"
     "utils/Task.hpp"
-    "utils/TaskFunctions.hpp")
+    "utils/TaskFunctions.hpp" utils/Visualization.h)
 set (SRC
     "DebugInterface.cpp"
     "MyStrategy.cpp"

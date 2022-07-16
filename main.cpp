@@ -64,7 +64,9 @@ public:
             }
         }
 #ifdef TICK_DEBUG_ENABLED
-        } catch (...) {
+        } catch (const std::exception &exc) {
+            // catch anything thrown within try block that derives from std::exception
+            std::cerr << messages.size() << ": " << exc.what();
         }
         int tickNo;
         while (true) {
@@ -81,7 +83,9 @@ public:
             auto tickStrategy = memory[tickNo];
             try {
                 tickStrategy.getOrder(message.playerView, nullptr);
-            } catch (...) {
+            } catch (const std::exception &exc) {
+                // catch anything thrown within try block that derives from std::exception
+                std::cerr << messages.size() << ": " << exc.what();
             }
         }
 #endif

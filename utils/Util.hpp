@@ -93,6 +93,13 @@ inline double AngleDiff(double first, double second) {
     return angleDiff;
 }
 
+inline double IncreaseAngle(double angle, double until) {
+    while (angle < until) {
+        angle += M_PI * 2.;
+    }
+    return angle;
+}
+
 inline bool
 IsCollide(Vec2 position, Vec2 velocity, Vec2 position2, Vec2 velocity2, const double time,
           const double collisionRadius) {

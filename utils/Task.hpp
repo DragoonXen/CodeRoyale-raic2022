@@ -28,6 +28,7 @@ struct POrder {
     bool aim;
     std::optional<std::shared_ptr<model::ActionOrder>> action;
     std::array<int, (int)OrderType::kItemsCount> picked;
+    std::array<std::string, (int)OrderType::kItemsCount> description;
 
     POrder() : aim(false) {
         picked.fill(-1);
@@ -42,9 +43,10 @@ struct POrder {
         return true;
     }
 
-    void Accept(const std::vector<OrderType> &orderTypes, int ruleId) {
+    inline void Accept(const std::vector<OrderType> &orderTypes, int ruleId, const std::string& taskDescription) {
         for (auto &type: orderTypes) {
             picked[(int) type] = ruleId;
+            this->description[(int) type] = taskDescription;
         }
     }
 

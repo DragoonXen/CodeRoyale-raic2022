@@ -14,24 +14,24 @@
 namespace TimeMeasure {
 #ifdef TIMING_ENABLED
     const int kMaxT = 11;
-    static std::array<long, kMaxT> timings = []() {
-        std::array<long, kMaxT> res = {};
+    static std::array<long long, kMaxT> timings = []() {
+        std::array<long long, kMaxT> res = {};
         for (size_t i = 0; i != kMaxT; ++i) {
             res[i] = 0;
         }
         return res;
     }();
 
-    static std::chrono::time_point<std::chrono::system_clock> startTime;
+    static std::chrono::time_point<std::chrono::high_resolution_clock> startTime;
 
     inline static void start() {
-        startTime = std::chrono::system_clock::now();
+        startTime = std::chrono::high_resolution_clock::now();
     }
 
     inline static void end(int idx) {
         timings[idx] += std::chrono::duration_cast<std::chrono::nanoseconds>(
-                std::chrono::system_clock::now() - startTime).count();
-        startTime = std::chrono::system_clock::now();
+                std::chrono::high_resolution_clock::now() - startTime).count();
+        startTime = std::chrono::high_resolution_clock::now();
     }
 
     inline static void printTimings() {

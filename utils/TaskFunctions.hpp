@@ -10,6 +10,7 @@
 #include "Movement.hpp"
 #include "Task.hpp"
 #include "Visible.hpp"
+#include "Visualization.h"
 
 namespace {
     using namespace model;
@@ -37,9 +38,10 @@ ApplyAttackTask(const Unit &unit, const Unit &target, const int currentTick, std
     const Constants& constants = Constants::INSTANCE;
     double velocity = target.velocity.norm();
     const double totalVelocity = velocity + std::max(0., velocity - 1.) + std::max(0., velocity - 2.);
-    Vec2 aimTarget = target.position +
-                     (velocity > 1e-5 ? target.velocity.toLen(totalVelocity) * constants.tickTime : target.direction *
-                                                                                                    0.3);
+    const Vec2 aimTarget = target.position +
+                           (velocity > 1e-5 ? target.velocity.toLen(totalVelocity) * constants.tickTime :
+                            target.direction * 0.3);
+    DRAW(DrawCross(aimTarget, 0.3, debugging::Color(1., 0., 0., 0.5), debugInterface););
 
     const double angleDiff = AngleDiff(unit.direction.toRadians(), (aimTarget - unit.position).toRadians());
     const double angleDiffAbs = std::abs(angleDiff);
@@ -52,6 +54,13 @@ ApplyAttackTask(const Unit &unit, const Unit &target, const int currentTick, std
 
     // how many ticks until next shot
     int ticksToPossibleShot = unit.nextShotTick - currentTick;
+    if (unit.action) {
+        ticksToPossibleShot = std::max(ticksToPossibleShot, unit.action->finishTick - currentTick);
+    }
+    if (unit.remainingSpawnTime) {
+        ticksToPossibleShot = std::max(ticksToPossibleShot,
+                                       (int) (*unit.remainingSpawnTime / constants.tickTime + 1e-2));
+    }
     if (ticksToRotate < 1 && unit.aim + 1e-5 > 1 && ticksToPossibleShot <= 0 &&
         acceptableWeaponDistance > currentDistance) {
         order.lookPoint = aimTarget;
@@ -81,6 +90,7 @@ ApplyAttackTask(const Unit &unit, const Unit &target, const int currentTick, std
 
 std::vector<OrderType> ApplyLookTo(const Vec2 point, POrder &order) {
     order.lookPoint = point;
+    DRAW(DrawCross(point, 0.3, debugging::Color(0., 0., 1., 0.5), debugInterface););
     return {OrderType::kRotate};
 }
 
@@ -121,11 +131,11 @@ ApplyMoveToUnitTask(const Unit &unit, const Unit &target, std::unordered_map<int
     const double currentWeaponDistance = kWeaponDistance[*unit.weapon];
     const Vec2 direction = unit.position - target.position;
     const double startingAngle = direction.toRadians();
+    const double distance = (target.position - unit.position).norm();
     for (double angleDiff : kAngleDiff) {
         const Vec2 newDirection = Vec2{startingAngle + angleDiff} * currentWeaponDistance;
         const Vec2 newPosition = target.position + newDirection;
         if (IsVisible<VisionFilter::kShootFilter>(newPosition, -newDirection, 100., target.position, myFilter)) {
-            const double distance = (target.position - unit.position).norm();
             const double maxSpeed = currentWeaponDistance > distance ? std::numeric_limits<double>::infinity() :
                                     std::max(distance - currentWeaponDistance, 0.) + 1;
             return ApplyMoveTo(unit, newPosition, myFilter, maxSpeed, order);
