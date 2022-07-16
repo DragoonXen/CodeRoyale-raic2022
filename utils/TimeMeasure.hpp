@@ -29,7 +29,7 @@ namespace TimeMeasure {
     }
 
     inline static void end(int idx) {
-        timings[idx] += std::chrono::duration_cast<std::chrono::nanoseconds>(
+        timings[idx] += std::chrono::duration_cast<std::chrono::microseconds>(
                 std::chrono::high_resolution_clock::now() - startTime).count();
         startTime = std::chrono::high_resolution_clock::now();
     }

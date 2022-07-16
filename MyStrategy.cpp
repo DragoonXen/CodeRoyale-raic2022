@@ -732,4 +732,5 @@ void MyStrategy::debugUpdate(DebugInterface &debugInterface) {
 }
 
 void MyStrategy::finish() {
+    TimeMeasure::printTimings();
 }
