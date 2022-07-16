@@ -458,19 +458,21 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
             continue;
         }
         auto& filteredObstacles = visibilityFilters[unit->id].closeObstacles;
-        //constants.fieldOfView;
-        const auto currDirection = unit->direction.toRadians();
+
+        const auto directionBonus = [moveDirection = unit->velocity.sqrNorm() > 1e-5 ? unit->velocity.toRadians() : 0](
+                auto direction) {
+            return 1e-5 * (1. - std::abs(AngleDiff(direction, moveDirection)) / M_PI);
+        };
+//        const auto currDirection = unit->direction.toRadians();
         for (const auto& enUnit : enemyUnits) {
             const Vec2 diff = enUnit->position - unit->position;
             if (diff.sqrNorm() > sqr(55.)) {
                 continue;
             }
 
-            const auto angle = IncreaseAngle((enUnit->position - unit->position).toRadians(), M_PI * 2);
-            const auto proposedLeftAngle = angle - unit->currentFieldOfView;
-            const auto proposedRightAngle = angle + unit->currentFieldOfView;
-            //bool IsVisible(Vec2 position, double lessAngle, double moreAngle, Vec2 point,
-            //               const std::vector<const Obstacle *> &obstacleVector) {
+            const auto angle = (enUnit->position - unit->position).toRadians();
+            const auto proposedRightAngle = SubstractAngle(angle, unit->currentFieldOfView);
+            const auto proposedLeftAngle = AddAngle(angle, unit->currentFieldOfView);
             const auto GetDanger = [&enemyUnits, &dangerList, &unit, &filteredObstacles]
                     (double leftAngle, double rightAngle) {
                 double danger = 0.;
@@ -486,9 +488,11 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
                 Task dangerControl{9, unit->id,
                                    std::to_string(unit->id) + " right danger control of " + std::to_string(enUnit->id),
                                    {OrderType::kRotate}};
-                dangerControl.score = GetDanger(proposedLeftAngle, angle);
-                dangerControl.func = [unit, resultAngle = (proposedLeftAngle + angle) * .5](
-                        POrder &order) -> std::vector<OrderType> {
+                const double resultAngle = SubstractAngle(angle, unit->currentFieldOfView / 2.);
+                const double dirBonus = directionBonus(resultAngle);
+                const double danger = GetDanger(proposedRightAngle, angle);
+                dangerControl.score = danger + dirBonus;
+                dangerControl.func = [unit, resultAngle](POrder &order) -> std::vector<OrderType> {
                     return ApplyLookTo(unit->position + Vec2{resultAngle} * 30., order);
                 };
                 tasks.push(dangerControl);
@@ -497,10 +501,25 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
                 Task dangerControl{9, unit->id,
                                    std::to_string(unit->id) + " left danger control of " + std::to_string(enUnit->id),
                                    {OrderType::kRotate}};
-                dangerControl.score = GetDanger(angle, proposedRightAngle);
-                dangerControl.func = [unit, resultAngle = (proposedRightAngle + angle) * .5](
-                        POrder &order) -> std::vector<OrderType> {
+                const double resultAngle = AddAngle(angle, unit->currentFieldOfView / 2.);
+                const double dirBonus = directionBonus(resultAngle);
+                const double danger = GetDanger(angle, proposedLeftAngle);
+                dangerControl.score = danger + dirBonus;
+                dangerControl.func = [unit, resultAngle](POrder &order) -> std::vector<OrderType> {
                     return ApplyLookTo(unit->position + Vec2{resultAngle} * 30., order);
+                };
+                tasks.push(dangerControl);
+            }
+            {
+                Task dangerControl{9, unit->id,
+                                   std::to_string(unit->id) + " center danger control of " + std::to_string(enUnit->id),
+                                   {OrderType::kRotate}};
+                const double dirBonus = directionBonus(angle);
+                const double danger = GetDanger(angle - unit->currentFieldOfView / 2.,
+                                                angle + unit->currentFieldOfView / 2.);
+                dangerControl.score = danger + dirBonus;
+                dangerControl.func = [unit, angle](POrder &order) -> std::vector<OrderType> {
+                    return ApplyLookTo(unit->position + Vec2{angle} * 30., order);
                 };
                 tasks.push(dangerControl);
             }

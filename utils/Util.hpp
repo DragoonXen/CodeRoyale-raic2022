@@ -87,7 +87,7 @@ inline double AngleDiff(double first, double second) {
     double angleDiff = first - second;
     if (angleDiff > M_PI) {
         angleDiff -= M_PI * 2.;
-    } else if (angleDiff < -M_PI) {
+    } else if (angleDiff <= -M_PI) {
         angleDiff += M_PI * 2.;
     }
     return angleDiff;
@@ -98,6 +98,33 @@ inline double IncreaseAngle(double angle, double until) {
         angle += M_PI * 2.;
     }
     return angle;
+}
+
+inline double AddAngle(double angle, double angleToAdd) {
+    angle += angleToAdd;
+    if (angle > M_PI) {
+        angle -= M_PI * 2.;
+    }
+    return angle;
+}
+
+inline double SubstractAngle(double angle, double angleToSubstract) {
+    angle -= angleToSubstract;
+    if (angle <= -M_PI) {
+        angle += M_PI * 2.;
+    }
+    return angle;
+}
+
+// check if angle between from and to counter clockwize
+inline bool AngleBetween(double angle, double from, double to) {
+    if (to < from) {
+        to += M_PI * 2.;
+    }
+    if (angle < from) {
+        angle += M_PI * 2.;
+    }
+    return angle <= to;
 }
 
 inline bool

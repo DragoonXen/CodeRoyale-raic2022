@@ -102,7 +102,7 @@ bool IsVisible(Vec2 position, Vec2 direction, double fieldOfView, Vec2 point,
     }
     for (const auto &obstacle: filteredObstacles) {
         if constexpr (filter == VisionFilter::kVisibilityFilter) {
-            if (obstacle->canSeeThrough) {
+            if (obstacle->canSeeThrough || !constants.viewBlocking) {
                 continue;
             }
         } else {
@@ -167,7 +167,7 @@ bool IsVisible(Vec2 position, Vec2 point, const std::vector<const Obstacle *> &o
     }
     for (const auto &obstacle: obstacleVector) {
         if constexpr (filter == VisionFilter::kVisibilityFilter) {
-            if (obstacle->canSeeThrough) {
+            if (obstacle->canSeeThrough || !constants.viewBlocking) {
                 continue;
             }
         } else {
@@ -189,14 +189,13 @@ bool IsVisible(Vec2 position, double lessAngle, double moreAngle, Vec2 point,
     if (sqr(constants.viewDistance) < (point - position).sqrNorm()) {
         return false;
     }
-    const double radians = IncreaseAngle((point - position).toRadians(), lessAngle);
-    if (radians > moreAngle) {
+    if (!AngleBetween((point - position).toRadians(), lessAngle, moreAngle)) {
         return false;
     }
 
     for (const auto &obstacle: obstacleVector) {
         if constexpr (filter == VisionFilter::kVisibilityFilter) {
-            if (obstacle->canSeeThrough) {
+            if (obstacle->canSeeThrough || !constants.viewBlocking) {
                 continue;
             }
         } else {
