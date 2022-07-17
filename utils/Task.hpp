@@ -22,32 +22,53 @@ enum class OrderType {
     kItemsCount
 };
 
+struct POrder;
+
+struct Task {
+    std::string description;
+    int type;
+    int unitId;
+    std::vector<OrderType> actionTypes;
+    std::any taskData;
+    double score;
+
+    explicit Task(int type, int unitId, std::string description, std::vector<OrderType> actionTypes) :
+            type(type),
+            description(std::move(description)),
+            unitId(unitId),
+            actionTypes(std::move(actionTypes)),
+            taskData() {}
+
+    std::function<std::vector<OrderType>(POrder &)> func;
+
+    bool operator<(const Task &other) const {
+        return this->score < other.score;
+    }
+};
+
 struct POrder {
     model::Vec2 movePoint;
     double maxMoveSpeed;
     model::Vec2 lookPoint;
     bool aim;
     std::optional<std::shared_ptr<model::ActionOrder>> action;
-    std::array<int, (int)OrderType::kItemsCount> picked;
-    std::array<std::string, (int)OrderType::kItemsCount> description;
+    std::array<int, (int) OrderType::kItemsCount> picked;
+    std::array<std::string, (int) OrderType::kItemsCount> description;
 
     POrder() : aim(false) {
         picked.fill(-1);
     }
 
     bool IsAbleToAcceptTask(const std::vector<OrderType> &orderTypes) {
-        for (auto &type: orderTypes) {
-            if (picked[(int) type] >= 0) {
-                return false;
-            }
-        }
-        return true;
+        return std::all_of(orderTypes.begin(), orderTypes.end(),
+                           [&picked = this->picked](const auto &type) { return picked[(int) type] < 0; });
     }
 
-    inline bool Accept(const std::vector<OrderType> &orderTypes, int ruleId, const std::string& taskDescription) {
+    inline bool Accept(const Task &task) {
+        std::vector<OrderType> orderTypes = task.func(*this);
         for (auto &type: orderTypes) {
-            picked[(int) type] = ruleId;
-            this->description[(int) type] = taskDescription;
+            picked[(int) type] = task.type;
+            DRAW({ this->description[(int) type] = to_string_p(task.score, 2) + "| " + task.description; });
         }
         return !orderTypes.empty();
     }
@@ -63,29 +84,6 @@ struct POrder {
         result.keepAim = picked[(int) OrderType::kAction] >= 0 && aim;
         return result;
     };
-};
-
-struct Task {
-    std::string description;
-    int type;
-    int unitId;
-    std::vector<OrderType> actionTypes;
-    std::any taskData;
-
-    explicit Task(int type, int unitId, std::string description, std::vector<OrderType> actionTypes) :
-            type(type),
-            description(std::move(description)),
-            unitId(unitId),
-            actionTypes(std::move(actionTypes)),
-            taskData() {}
-
-    double score;
-
-    std::function<std::vector<OrderType>(POrder &)> func;
-
-    bool operator<(const Task &other) const {
-        return this->score < other.score;
-    }
 };
 
 /*

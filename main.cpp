@@ -47,7 +47,7 @@ public:
                 codegame::ClientMessage::DebugUpdateDone().writeTo(tcpStream);
 #ifdef TICK_DEBUG_ENABLED
                 int tickNo = -1;
-                if (tickNo > 0 && tickNo < (int) messages.size()) {
+                if (tickNo >= 0 && tickNo < (int) messages.size()) {
                     auto message = messages[tickNo];
                     auto tickStrategy = memory[tickNo];
                     try {

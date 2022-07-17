@@ -50,10 +50,15 @@ namespace {
     }
 }
 
+std::unordered_map<int, std::function<bool(const std::any&, const std::any&)>> MyStrategy::taskFilter;
+
 MyStrategy::MyStrategy(const model::Constants &constants) {
     TimeMeasure::start();
     Constants::INSTANCE = constants;
     Constants::INSTANCE.Update();
+    taskFilter[6] = [](const std::any &newTask, const std::any &applied) -> bool {
+        return std::any_cast<int>(newTask) == std::any_cast<int>(applied);
+    };
     TimeMeasure::end(0);
 }
 
@@ -72,6 +77,14 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
     const auto enemies_filter = [id = game.myId](const auto &unit) { return unit.playerId != id; };
 
     auto myUnits = filterUnits(game.units, my_units_filter);
+    std::unordered_map<int, double> unknownIncomingDamageSum;
+    if (game_base.currentTick == 0) {
+        for (auto unit : myUnits) {
+            unknownDamage[unit->id] = {};
+            unknownIncomingDamageSum[unit->id] = 0.;
+            radarTaskData[unit->id] = {0, 0., -10000};
+        }
+    }
 
     std::unordered_map<int, VisibleFilter> visibilityFilters;
     for (auto& unit : game.units) {
@@ -130,19 +143,6 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
         }
     }
 
-    DRAW({
-             for (auto &unit: game.units) {
-                 debugInterface->addPlacedText(unit.position + model::Vec2{1., 1.},
-                                               "unit " + std::to_string(unit.id) + "\n" +
-                                               to_string_p(unit.shield, 1) +
-                                               "|" + to_string_p(unit.health, 1) + "\n" +
-                                               to_string_p(unit.position.x, 2) + "|" +
-                                               to_string_p(unit.position.y, 2),
-                                               {0., 1.}, 0.7,
-                                               debugging::Color(0, 0, 0, 1));
-             }
-         });
-
     if (debugInterface) {
         for (const auto &item: debugInterface->getState().pressedKeys) {
             if (item.find('W') != std::string::npos) {
@@ -157,7 +157,6 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
             }
         }
     }
-#ifdef DEBUG_INFO
     if (last_tick_game) {
         auto my_units_last_tick = filterUnits(last_tick_game->units, my_units_filter);
         for (const auto &unit: myUnits) {
@@ -169,6 +168,21 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
                 }
                 return nullptr;
             }();
+            const double actualIncomingDamage = (old_unit->shield + old_unit->health) - (unit->shield + unit->health);
+            const double unknownIncomingDamage = std::max(actualIncomingDamage - incomingDamage[unit->id], 0.);
+            constexpr size_t maxDamageCountingPeriod = 90;
+            auto& list = unknownDamage[unit->id];
+            list.push_back(unknownIncomingDamage);
+            if (list.size() > maxDamageCountingPeriod) {
+                list.pop_front();
+            }
+            double sumDamage = 0.;
+            for (const auto &item: list) {
+                sumDamage += item;
+            }
+            unknownIncomingDamageSum[unit->id] = sumDamage;
+
+#ifdef DEBUG_INFO
             if ((old_unit->position - unit->position).norm() > 1e-10) {
                 std::cerr << game.currentTick << " pos expected " << old_unit->position.toString() << " actual "
                           << unit->position.toString() << " diff " << (old_unit->position - unit->position).norm()
@@ -183,9 +197,23 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
                 std::cerr << game.currentTick << " aim expected " << std::to_string(old_unit->aim) << " actual "
                           << std::to_string(unit->aim) << std::endl;
             }
+#endif
         }
     }
-#endif
+
+    DRAW({
+             for (auto &unit: game.units) {
+                 debugInterface->addPlacedText(unit.position + model::Vec2{1., 1.},
+                                               "unit " + std::to_string(unit.id) + "\n" +
+                                               to_string_p(unit.shield, 1) +
+                                               "|" + to_string_p(unit.health, 1) + "\n" +
+                                               to_string_p(unit.position.x, 2) + "|" +
+                                               to_string_p(unit.position.y, 2) + "\n" +
+                                               to_string_p(unknownIncomingDamageSum[unit.id], 1),
+                                               {0., 1.}, 0.7,
+                                               debugging::Color(0, 0, 0, 1));
+             }
+         });
 
     Vec2 centerPoint = {0., 0.};
     for (auto& unit : myUnits) {
@@ -341,7 +369,9 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
             if ((loot.position - game.zone.currentCenter).sqrNorm() >= sqr(game.zone.currentRadius)) {
                 return false;
             }
-            if (distance <= Constants::INSTANCE.unitRadius && !unit->action && !unit->remainingSpawnTime) {
+            if (distance <= Constants::INSTANCE.unitRadius && !unit->action.has_value() &&
+                !unit->remainingSpawnTime.has_value() &&
+                unit->aim < 1e-5) {
                 Task pickTask{6, unit->id,
                               std::to_string(unit->id) + " pick up " + std::to_string(loot.id) + "|" +
                               loot.position.toString(),
@@ -467,6 +497,7 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
             }
 
             const auto angle = (enUnit->position - unit->position).toRadians();
+            // TODO: left/right angles should be not into center
             const auto proposedRightAngle = SubstractAngle(angle, unit->currentFieldOfView);
             const auto proposedLeftAngle = AddAngle(angle, unit->currentFieldOfView);
             const auto GetDanger = [&enemyUnits, &dangerList, &unit, &filteredObstacles]
@@ -521,6 +552,37 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
             }
         }
     }
+    /** ==================================================================================
+     *  Radar
+     *  ==================================================================================
+     */
+    for (const Unit *unit: myUnits) {
+        auto &[radarState, startingAngle, lastEndTick] = radarTaskData[unit->id];
+        constexpr int kTicksToRepeatRadar = 90;
+        if (radarState == 2 &&
+            std::abs(AngleDiff(startingAngle, unit->direction.toRadians())) < unit->currentFieldOfView * .5) {
+            // got full rotation
+            std::cerr << SubstractAngle(unit->direction.toRadians(), unit->currentFieldOfView * .5) << std::endl;
+            lastEndTick = game.currentTick;
+        }
+        radarState = radarState == 2 ? 1 : 0;
+        if (lastEndTick + kTicksToRepeatRadar > game.currentTick) {
+            // last task finished previously
+            continue;
+        }
+
+        Task radarTask{10, unit->id, std::to_string(unit->id) + " radar mode", {OrderType::kRotate}};
+        radarTask.score = 0.2 + unknownIncomingDamageSum[unit->id];
+        radarTask.func = [unit, &radarState = radarState, &startingAngle = startingAngle](
+                POrder &order) -> std::vector<OrderType> {
+            if (radarState == 0) {
+                startingAngle = AddAngle(unit->direction.toRadians(), unit->currentFieldOfView * .5);
+            }
+            radarState = 2;
+            return ApplyLookTo(unit->position + unit->direction.clone().rotate90() * 30., order);
+        };
+        tasks.push(radarTask);
+    }
     TimeMeasure::end(5);
 
     /** ==================================================================================
@@ -531,18 +593,15 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
     for (Unit* unit: myUnits) {
         pOrders[unit->id] = POrder();
     }
-    std::unordered_map<int, std::function<bool(const std::any&, const std::any&)>> taskFilter;
-    taskFilter[6] = [](const std::any &newTask, const std::any &applied) -> bool {
-        return std::any_cast<int>(newTask) == std::any_cast<int>(applied);
-    };
     std::unordered_map<int, std::vector<std::any>> usedData;
+    incomingDamage.clear();
     for (;!tasks.empty(); tasks.pop()) {
         const auto& task = tasks.top();
         POrder& curr = pOrders[task.unitId];
         if (!curr.IsAbleToAcceptTask(task.actionTypes)) {
             continue;
         }
-        if (task.taskData.has_value() && [&taskFilter, &usedData, &task]() {
+        if (task.taskData.has_value() && [&usedData, &task]() {
             const auto &filter = taskFilter[task.type];
             for (const auto &value: usedData[task.type]) {
                 if (filter(task.taskData, value)) {
@@ -558,7 +617,7 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
             std::cerr << "[No function implemented]: " << task.type << ": " << task.description << std::endl;
         }
 #endif
-        if (curr.Accept(task.func(curr), task.type, task.description) && task.taskData.has_value()) {
+        if (curr.Accept(task) && task.taskData.has_value()) {
             usedData.try_emplace(task.type).first->second.push_back(task.taskData);
         }
     }
@@ -569,7 +628,7 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
     for (Unit *unit: myUnits) {
         const auto &pOrder = pOrders[unit->id];
         MoveRule orderedRule = pOrder.toMoveRule();
-        const auto [resultUnit, damageScore, firstProjectile] = Simulate(*unit, game, orderedRule);
+        const auto [_, damageScore, firstProjectile] = Simulate(*unit, game, orderedRule);
         if (damageScore == 0.) {
             auto order = ApplyAvoidRule(*unit, orderedRule);
             order.action = pOrder.action;
@@ -577,6 +636,7 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
             orders[unit->id] = order;
             debugActions(pOrder, *unit, -1);
             usedAvoidRule.erase(unit->id);
+            incomingDamage[unit->id] = 0;
             continue;
         }
         TimeMeasure::end(7);
@@ -631,8 +691,19 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
         }
 
         auto [score, ruleId] = ChooseBest(*unit, game, complexRules);
+        // какая же какаха, а
+        const auto [resultUnit, dScore, _2] = Simulate(*unit, game, complexRules[ruleId], 1);
+        incomingDamage[unit->id] = (unit->shield + unit->health) - (resultUnit.shield + resultUnit.health);
         auto order = ApplyAvoidRule(*unit, complexRules[ruleId].storage.front());
-        if (complexRules[ruleId].storage.front().keepAim == orderedRule.keepAim) {
+        if (pOrder.action.has_value() &&
+            (complexRules[ruleId].storage.front().keepAim == orderedRule.keepAim ||
+             std::dynamic_pointer_cast<ActionOrder::Aim>(*pOrder.action) == nullptr)) {
+            auto aimMessage = std::dynamic_pointer_cast<ActionOrder::Aim>(*pOrder.action);
+            if (aimMessage != nullptr && aimMessage->shoot) {
+                aimMessage->shoot &=
+                        (*complexRules[ruleId].storage.front().lookDirection - *orderedRule.lookDirection).sqrNorm() <
+                        1e-10;
+            }
             order.action = pOrder.action;
         }
         orders[unit->id] = order;
