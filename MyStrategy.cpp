@@ -210,9 +210,7 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
             for (size_t i = 0; i != enemyUnits.size(); ++i) {
                 const auto& enUnit = enemyUnits[i];
                 const double distanceSqr = (unit->position - enUnit->position).sqrNorm();
-                if (enUnit->remainingSpawnTime.has_value() &&
-                    (enUnit->position - unit->position).norm() / constants.weapons[*unit->weapon].projectileSpeed <
-                    *enUnit->remainingSpawnTime) {
+                if (ShootWhileSpawning(*unit, *enUnit, 0.)) {
                     continue;
                 }
                 distances.emplace_back(distanceSqr, i);
@@ -235,8 +233,8 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
 //                if (!IsReachable(unit->position, enUnit->position, visibilityFilters[unit->id])) {
 //                    moveTask.score /= 10.;
 //                }
-                moveTask.func = [unit, enUnit, &visibilityFilters](POrder &order) -> std::vector<OrderType> {
-                    return ApplyMoveToUnitTask(*unit, *enUnit, visibilityFilters, order);
+                moveTask.func = [unit, enUnit, &visibilityFilters, &myUnits](POrder &order) -> std::vector<OrderType> {
+                    return ApplyMoveToUnitTask(*unit, myUnits, *enUnit, visibilityFilters, order);
                 };
                 tasks.push(moveTask);
                 if (item.first > 30. * 30.) { // no attack task fot this case. Going to danger control task, type 9
@@ -247,9 +245,9 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
                                 {OrderType::kAction, OrderType::kRotate}};
 
                 attackTask.score = moveTask.score;
-                attackTask.func = [unit, enUnit, tick = game.currentTick, &visibilityFilters](
+                attackTask.func = [unit, &myUnits, enUnit, tick = game.currentTick, &visibilityFilters](
                         POrder &order) -> std::vector<OrderType> {
-                    return ApplyAttackTask(*unit, *enUnit, tick, visibilityFilters, order);
+                    return ApplyAttackTask(*unit, myUnits, *enUnit, tick, visibilityFilters, order);
                 };
                 tasks.push(attackTask);
             };

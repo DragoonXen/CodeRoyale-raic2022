@@ -164,7 +164,12 @@ struct ZoneMover {
     }
 };
 
-
+inline bool ShootWhileSpawning(const Unit &fromUnit, const Unit &otherUnit, const double addDistance) {
+    return otherUnit.remainingSpawnTime.has_value() &&
+           ((otherUnit.position - fromUnit.position).norm() + addDistance) /
+           Constants::INSTANCE.weapons[*fromUnit.weapon].projectileSpeed <
+           *otherUnit.remainingSpawnTime;
+}
 
 #ifdef DEBUG_INFO
 #define VERIFY(a, b) {if (!(a)){std::cerr << (b) << std::endl; getchar();exit(-1);}}

@@ -33,7 +33,7 @@ namespace {
 }
 
 std::vector<OrderType>
-ApplyAttackTask(const Unit &unit, const Unit &target, const int currentTick, std::unordered_map<int, VisibleFilter> &visibilityFilters,
+ApplyAttackTask(const Unit &unit, const std::vector<Unit*>& myUnits, const Unit &target, const int currentTick, std::unordered_map<int, VisibleFilter> &visibilityFilters,
                 POrder &order) {
     const Constants& constants = Constants::INSTANCE;
     double velocity = target.velocity.norm();
@@ -65,7 +65,25 @@ ApplyAttackTask(const Unit &unit, const Unit &target, const int currentTick, std
         acceptableWeaponDistance > currentDistance) {
         order.lookPoint = aimTarget;
         const auto &myFilter = visibilityFilters[unit.id];
-        bool shoot = IsVisible<VisionFilter::kShootFilter>(unit.position, unit.direction, 100., aimTarget, myFilter);
+        bool shoot = unit.lastSeenTick == target.lastSeenTick &&
+                     IsVisible<VisionFilter::kShootFilter>(unit.position, unit.direction, 100., aimTarget, myFilter);
+        if (shoot) {
+            for (const auto& myUnit : myUnits) {
+                if (myUnit->id == unit.id) {
+                    continue;
+                }
+                const double timeToCoverDistance =
+                        ((myUnit->position - unit.position).norm() - constants.unitRadius * 2) /
+                        constants.weapons[*unit.weapon].projectileSpeed;
+                auto myUnitPosition = myUnit->position + (myUnit->velocity * timeToCoverDistance);
+                const double shootToUnitSqrDistance =
+                        SegmentPointSqrDist(myUnitPosition, unit.position, aimTarget);
+                if (shootToUnitSqrDistance < sqr(Constants::INSTANCE.unitRadius + 0.5)) {
+                    shoot = false;
+                    break;
+                }
+            }
+        }
         order.action = std::make_shared<ActionOrder::Aim>(shoot);
         order.aim = true;
         return {OrderType::kRotate, OrderType::kAction};
@@ -125,7 +143,7 @@ std::vector<OrderType> ApplyMoveTo(const Unit &unit,
 }
 
 std::vector<OrderType>
-ApplyMoveToUnitTask(const Unit &unit, const Unit &target, std::unordered_map<int, VisibleFilter> &visibilityFilters,
+ApplyMoveToUnitTask(const Unit &unit, const std::vector<Unit*>& myUnits, const Unit &target, std::unordered_map<int, VisibleFilter> &visibilityFilters,
                     POrder &order) {
     const Constants &constants = Constants::INSTANCE;
     const auto &myFilter = visibilityFilters[unit.id];
@@ -136,10 +154,34 @@ ApplyMoveToUnitTask(const Unit &unit, const Unit &target, std::unordered_map<int
     for (double angleDiff : kAngleDiff) {
         const Vec2 newDirection = Vec2{startingAngle + angleDiff} * currentWeaponDistance;
         const Vec2 newPosition = target.position + newDirection;
-        if (IsVisible<VisionFilter::kShootFilter>(newPosition, -newDirection, 100., target.position, myFilter)) {
-            const double maxSpeed = currentWeaponDistance > distance ? std::numeric_limits<double>::infinity() :
-                                    std::max(distance - currentWeaponDistance, 0.) + 1;
-            return ApplyMoveTo(unit, newPosition, myFilter, maxSpeed, order);
+        const bool ignorePosition = [&unit, &myUnits, &newPosition]() {
+            for (const auto myOtherUnit: myUnits) {
+                if (myOtherUnit->id == unit.id || myOtherUnit->remainingSpawnTime.has_value()) {
+                    continue;
+                }
+                const double shootToUnitSqrDistance =
+                        SegmentPointSqrDist(myOtherUnit->position, unit.position, newPosition);
+                if (shootToUnitSqrDistance < sqr(Constants::INSTANCE.unitRadius * 2 + 0.5)) {
+                    return true;
+                }
+            }
+            return false;
+        }();
+        if (ignorePosition) {
+            continue;
+        }
+        if (unit.lastSeenTick == target.lastSeenTick) {
+            if (IsVisible<VisionFilter::kShootFilter>(newPosition, -newDirection, 100., target.position, myFilter)) {
+                const double maxSpeed = currentWeaponDistance > distance ? std::numeric_limits<double>::infinity() :
+                                        std::max(distance - currentWeaponDistance, 0.) + 1;
+                return ApplyMoveTo(unit, newPosition, myFilter, maxSpeed, order);
+            }
+        } else {
+            if (IsVisible<VisionFilter::kVisibilityFilter>(newPosition, -newDirection, 100., target.position, myFilter)) {
+                const double maxSpeed = currentWeaponDistance > distance ? std::numeric_limits<double>::infinity() :
+                                        std::max(distance - currentWeaponDistance, 0.) + 1;
+                return ApplyMoveTo(unit, newPosition, myFilter, maxSpeed, order);
+            }
         }
     }
     return {};
