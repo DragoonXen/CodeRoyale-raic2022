@@ -96,11 +96,11 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
 
     {
         TimeMeasure::end(1);
-        auto projectilesUnitInfo = UpdateProjectiles(game, last_tick_game, myUnits, visibilityFilters);
+        auto projectilesUnitInfo = UpdateProjectiles(game, last_tick_game, myUnits, game.units, visibilityFilters);
         TimeMeasure::end(2);
-        UpdateLoot(game, last_tick_game, myUnits, visibilityFilters);
+        UpdateLoot(game, last_tick_game, myUnits, game.units, visibilityFilters);
         TimeMeasure::end(3);
-        UpdateUnits(game, last_tick_game, myUnits, visibilityFilters, std::move(projectilesUnitInfo));
+        UpdateUnits(game, last_tick_game, myUnits, game.units, visibilityFilters, std::move(projectilesUnitInfo));
     }
     TimeMeasure::end(4);
     myUnits = filterUnits(game.units, my_units_filter);

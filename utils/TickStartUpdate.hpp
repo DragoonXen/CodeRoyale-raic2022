@@ -48,6 +48,7 @@ struct ProjectileUnitsProposals {
 
 std::unordered_map<int, ProjectileUnitsProposals>
 UpdateProjectiles(Game &game, std::optional<Game> &last_tick, const std::vector<Unit *> &units,
+                  const std::vector<Unit> &allUnits,
                   const std::unordered_map<int, VisibleFilter> &filters) {
     std::unordered_map<int, Projectile *> from_prev_tick;
     const Constants &constants = Constants::INSTANCE;
@@ -89,7 +90,7 @@ UpdateProjectiles(Game &game, std::optional<Game> &last_tick, const std::vector<
                 continue;
             }
             projectile.position += projectile.velocity * constants.tickTime;
-            if (!IsVisible<kVisibilityFilter>(projectile.position, units, filters)) {
+            if (!IsVisible<kVisibilityFilter>(projectile.position, units, allUnits, filters)) {
                 game.projectiles.push_back(projectile);
             } else {
                 DRAW({
@@ -117,6 +118,7 @@ UpdateProjectiles(Game &game, std::optional<Game> &last_tick, const std::vector<
 }
 
 void UpdateLoot(Game &game, std::optional<Game> &last_tick, const std::vector<Unit *> &units,
+                const std::vector<Unit> &allUnits,
                 const std::unordered_map<int, VisibleFilter> &filters) {
     std::unordered_map<int, Loot *> from_prev_tick;
      const Constants &constants = Constants::INSTANCE;
@@ -140,7 +142,7 @@ void UpdateLoot(Game &game, std::optional<Game> &last_tick, const std::vector<Un
             if (!from_prev_tick.count(loot.id)) {
                 continue;
             }
-            if (!IsVisible<kVisibilityFilter>(loot.position, units, filters)) {
+            if (!IsVisible<kVisibilityFilter>(loot.position, units, allUnits, filters)) {
                 DRAW(debugInterface->addCircle(loot.position, .7, debugging::Color(0., 1., 0., .3)););
                 game.loot.push_back(loot);
             }
@@ -178,6 +180,7 @@ void UpdateUnitFromInfo(Unit& unit, ProjectileUnitsProposals& proposal) {
 }
 
 void UpdateUnits(Game &game, std::optional<Game> &lastTick, const std::vector<Unit *> &units,
+                 const std::vector<Unit> &allUnits,
                  const std::unordered_map<int, VisibleFilter> &filters,
                  std::unordered_map<int, ProjectileUnitsProposals> projectilesUnitInfo) {
     DRAW(for (auto &[id, info]: projectilesUnitInfo) {
@@ -219,7 +222,7 @@ void UpdateUnits(Game &game, std::optional<Game> &lastTick, const std::vector<Un
                 UpdateUnitFromInfo(unit, iter->second);
                 projectilesUnitInfo.erase(iter);
             }
-            if (!IsVisible<kVisibilityFilter>(unit.position, units, filters)) {
+            if (!IsVisible<kVisibilityFilter>(unit.position, units, allUnits, filters)) {
                 DRAW(debugInterface->addCircle(unit.position, 1.3, debugging::Color(0., 1., 0., .3)););
                 unitsToAdd.push_back(&unit);
             }

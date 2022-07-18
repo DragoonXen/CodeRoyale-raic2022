@@ -212,10 +212,24 @@ bool IsVisible(Vec2 position, double lessAngle, double moreAngle, Vec2 point,
 
 template<VisionFilter filter>
 bool
-IsVisible(Vec2 point, const std::vector<Unit *> &units, const std::unordered_map<int, VisibleFilter> &filters) {
-    for (const auto unit: units) {
+IsVisible(Vec2 point, const std::vector<Unit *> &myUnits, const std::vector<Unit> &allUnits,
+          const std::unordered_map<int, VisibleFilter> &filters) {
+    for (const auto unit: myUnits) {
         if (IsVisible<filter>(unit->position, unit->direction, unit->currentFieldOfView, point, filters.at(unit->id))) {
-            return true;
+            bool unitBlock = false;
+            for (const auto& otherUnit : allUnits) {
+                if (otherUnit.id == unit->id || otherUnit.remainingSpawnTime.has_value()) {
+                    continue;
+                }
+                auto sqrDist = SegmentPointSqrDist(otherUnit.position, unit->position, point);
+                if (sqrDist < sqr(Constants::INSTANCE.unitRadius)) {
+                    unitBlock = true;
+                    break;
+                }
+            }
+            if (!unitBlock) {
+                return true;
+            }
         }
     }
     return false;
