@@ -572,7 +572,7 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
         }
 
         Task radarTask{10, unit->id, std::to_string(unit->id) + " radar mode", {OrderType::kRotate}};
-        radarTask.score = 0.2 + unknownIncomingDamageSum[unit->id];
+        radarTask.score = -0.5;// + unknownIncomingDamageSum[unit->id];
         radarTask.func = [unit, &radarState = radarState, &startingAngle = startingAngle](
                 POrder &order) -> std::vector<OrderType> {
             if (radarState == 0) {
