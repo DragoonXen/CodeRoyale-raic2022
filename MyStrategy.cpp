@@ -497,11 +497,11 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
             }
 
             const auto angle = (enUnit->position - unit->position).toRadians();
-            auto [pointForRight, pointForLeft] = (enUnit->remainingSpawnTime.has_value() ||
-                                                  unit->remainingSpawnTime.has_value()) ?
-                                                 std::make_pair(enUnit->position, enUnit->position) :
-                                                 TangentialPoints(unit->position, enUnit->position,
-                                                                  Constants::INSTANCE.unitRadius);
+            auto [pointForRight, pointForLeft] =
+                    diff.sqrNorm() < sqr(constants.unitRadius * 2) ?
+                    std::make_pair(enUnit->position, enUnit->position) :
+                    TangentialPoints(unit->position, enUnit->position,
+                                     Constants::INSTANCE.unitRadius);
             constexpr double kAdditionalAngleToControl = M_PI / 180;
             const double pointProposedRight = AddAngle((pointForRight - unit->position).toRadians(),
                                                        kAdditionalAngleToControl);

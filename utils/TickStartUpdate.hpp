@@ -66,18 +66,20 @@ UpdateProjectiles(Game &game, std::optional<Game> &last_tick, const std::vector<
             projectile.lifeTime = from_prev_tick[projectile.id]->lifeTime;
             from_prev_tick.erase(projectile.id);
         } else {
-            const double timeInFly =
-                    constants.weapons[projectile.weaponTypeIndex].projectileLifeTime - projectile.lifeTime;
-            const int tickToShootFrom = game.currentTick - (int) (timeInFly / constants.tickTime + 0.1);
-            auto iter = knownUnitsInfo.find(projectile.shooterId);
-            if (iter == knownUnitsInfo.end() || iter->second.tick < tickToShootFrom) {
-                const auto projectileDir = projectile.velocity.clone().toLen(1.);
-                const auto shootPoint = projectile.position - projectile.velocity * timeInFly -
-                                        projectileDir * constants.unitRadius;
+            if (projectile.shooterPlayerId != game.myId) {
+                const double timeInFly =
+                        constants.weapons[projectile.weaponTypeIndex].projectileLifeTime - projectile.lifeTime;
+                const int tickToShootFrom = game.currentTick - (int) (timeInFly / constants.tickTime + 0.1);
+                auto iter = knownUnitsInfo.find(projectile.shooterId);
+                if (iter == knownUnitsInfo.end() || iter->second.tick < tickToShootFrom) {
+                    const auto projectileDir = projectile.velocity.clone().toLen(1.);
+                    const auto shootPoint = projectile.position - projectile.velocity * timeInFly -
+                                            projectileDir * constants.unitRadius;
 
-                knownUnitsInfo[projectile.shooterId] =
-                        ProjectileUnitsProposals{tickToShootFrom, projectile.shooterId, projectile.shooterPlayerId,
-                                                 shootPoint, projectileDir, projectile.weaponTypeIndex};
+                    knownUnitsInfo[projectile.shooterId] =
+                            ProjectileUnitsProposals{tickToShootFrom, projectile.shooterId, projectile.shooterPlayerId,
+                                                     shootPoint, projectileDir, projectile.weaponTypeIndex};
+                }
             }
 
             UpdateLifetime(projectile);
