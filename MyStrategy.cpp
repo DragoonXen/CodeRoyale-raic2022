@@ -281,7 +281,9 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
             };
         }
     }
-
+    /***
+     * point_move_to / point_look_to
+     */
     for (const Unit* unit: myUnits) {
         DRAWK('O', {
             if (point_move_to) {
@@ -322,9 +324,8 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
             if (zoneDst.sqrNorm() < 1.) {
                 zoneDst = {1., 0};
             }
-            const Vec2 moveDirection =
-                    zone.currentCenter + Vec2(zoneDst.toRadians() + M_PI / 6).toLen(
-                            std::max(2., zone.currentRadius - Constants::INSTANCE.viewDistance));
+            const Vec2 moveDirection = zone.currentCenter + Vec2(zoneDst.toRadians() + M_PI / 6).toLen(
+                    std::max(0., zone.currentRadius - Constants::INSTANCE.viewDistance));
             return ApplyMoveTo(*unit, moveDirection, filter, std::numeric_limits<double>::infinity(), order);
         };
         tasks.push(moveTask);
@@ -404,7 +405,7 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
                      if (priority <= 0.) {
                         return;
                     }
-                    size_t count = 3;
+                    size_t count = 10;
                     for (const auto &weapon: weapons) {
                         const Loot &loot = game.loot[weapon.second];
                         if (loot.weaponTypeIndex != weaponType) {
