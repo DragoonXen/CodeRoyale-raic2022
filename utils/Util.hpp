@@ -171,6 +171,24 @@ inline bool ShootWhileSpawning(const Unit &fromUnit, const Unit &otherUnit, cons
            *otherUnit.remainingSpawnTime;
 }
 
+inline std::pair<Vec2, Vec2> TangentialPoints(Vec2 from, Vec2 to, const double radius) {
+    from = (to + from) * .5;
+    const double firstRadiusSqr = (from - to).sqrNorm() + 1e-10;
+    to -= from;
+
+    const double a = -2 * to.x;
+    const double b = -2 * to.y;
+    const double c = sqr(to.x) + sqr(to.y) + firstRadiusSqr - sqr(radius);
+
+    const double x0 = -a * c / (a * a + b * b);
+    const double y0 = -b * c / (a * a + b * b);
+    // every time there would be two intersection points
+    double d = firstRadiusSqr - sqr(c) / (sqr(a) + sqr(b));
+    double mult = sqrt(d / (a * a + b * b));
+    return {Vec2{x0 + b * mult, y0 - a * mult} + from,
+            Vec2{x0 - b * mult, y0 + a * mult} + from};
+}
+
 #ifdef DEBUG_INFO
 #define VERIFY(a, b) {if (!(a)){std::cerr << (b) << std::endl; getchar();exit(-1);}}
 #else

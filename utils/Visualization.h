@@ -2,11 +2,11 @@
 // Created by dragoon on 16.07.2022.
 //
 
+#include "DebugInterface.hpp"
+
 #ifndef AI_CUP_22_VISUALIZATION_H
 #define AI_CUP_22_VISUALIZATION_H
 
-
-#include "DebugInterface.hpp"
 
 inline void
 DrawCross(const model::Vec2 point, const double crossSize, debugging::Color color, DebugInterface *debugInterface) {

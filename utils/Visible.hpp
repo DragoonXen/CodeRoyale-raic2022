@@ -217,7 +217,7 @@ IsVisible(Vec2 point, const std::vector<Unit *> &myUnits, const std::vector<Unit
     for (const auto unit: myUnits) {
         if (IsVisible<filter>(unit->position, unit->direction, unit->currentFieldOfView, point, filters.at(unit->id))) {
             bool unitBlock = false;
-            for (const auto& otherUnit : allUnits) {
+            for (const auto &otherUnit: allUnits) {
                 if (otherUnit.id == unit->id || otherUnit.remainingSpawnTime.has_value()) {
                     continue;
                 }

@@ -197,7 +197,7 @@ void UpdateUnits(Game &game, std::optional<Game> &lastTick, const std::vector<Un
     const Constants &constants = Constants::INSTANCE;
     if (lastTick) {
         for (auto &unit: lastTick->units) {
-            if (unit.lastSeenTick + kUnitExpiration < game.currentTick) {
+            if (unit.lastSeenTick + kUnitExpiration < game.currentTick || unit.playerId == game.myId) {
                 continue;
             }
             from_prev_tick[unit.id] = &unit;

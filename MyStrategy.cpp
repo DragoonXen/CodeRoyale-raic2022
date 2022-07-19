@@ -111,7 +111,7 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
         unitDanger[unit->id] = std::unordered_map<int, double>();
         auto &myUnitMap = unitDanger[unit->id];
         for (const auto &enemyUnit: enemyUnits) {
-             double danger = 1.;
+            double danger = 1.;
             const Vec2 distanceVec = unit->position - enemyUnit->position;
             // angle danger
             const double angleDiff = std::abs(AngleDiff(enemyUnit->direction.toRadians(), distanceVec.toRadians()));
@@ -497,9 +497,18 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
             }
 
             const auto angle = (enUnit->position - unit->position).toRadians();
-            // TODO: left/right angles should be not into center
-            const auto proposedRightAngle = SubstractAngle(angle, unit->currentFieldOfView);
-            const auto proposedLeftAngle = AddAngle(angle, unit->currentFieldOfView);
+            auto [pointForRight, pointForLeft] = (enUnit->remainingSpawnTime.has_value() ||
+                                                  unit->remainingSpawnTime.has_value()) ?
+                                                 std::make_pair(enUnit->position, enUnit->position) :
+                                                 TangentialPoints(unit->position, enUnit->position,
+                                                                  Constants::INSTANCE.unitRadius);
+            constexpr double kAdditionalAngleToControl = M_PI / 180;
+            const double pointProposedRight = AddAngle((pointForRight - unit->position).toRadians(),
+                                                       kAdditionalAngleToControl);
+            const double proposedRightAngle = SubstractAngle(pointProposedRight, unit->currentFieldOfView);
+            const double pointProposedLeft = SubstractAngle((pointForLeft - unit->position).toRadians(),
+                                                            kAdditionalAngleToControl);
+            const double proposedLeftAngle = AddAngle(pointProposedLeft, unit->currentFieldOfView);
             const auto GetDanger = [&enemyUnits, &dangerList, &unit, &filteredObstacles]
                     (double leftAngle, double rightAngle) {
                 double danger = 0.;
@@ -515,9 +524,9 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
                 Task dangerControl{9, unit->id,
                                    std::to_string(unit->id) + " right danger control of " + std::to_string(enUnit->id),
                                    {OrderType::kRotate}};
-                const double resultAngle = SubstractAngle(angle, unit->currentFieldOfView / 2.);
+                const double resultAngle = SubstractAngle(pointProposedRight, unit->currentFieldOfView / 2.);
                 const double dirBonus = directionBonus(resultAngle);
-                const double danger = GetDanger(proposedRightAngle, angle);
+                const double danger = GetDanger(proposedRightAngle, pointProposedRight);
                 dangerControl.score = danger + dirBonus;
                 dangerControl.func = [unit, resultAngle](POrder &order) -> std::vector<OrderType> {
                     return ApplyLookTo(unit->position + Vec2{resultAngle} * 30., order);
@@ -528,9 +537,9 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
                 Task dangerControl{9, unit->id,
                                    std::to_string(unit->id) + " left danger control of " + std::to_string(enUnit->id),
                                    {OrderType::kRotate}};
-                const double resultAngle = AddAngle(angle, unit->currentFieldOfView / 2.);
+                const double resultAngle = AddAngle(pointProposedLeft, unit->currentFieldOfView / 2.);
                 const double dirBonus = directionBonus(resultAngle);
-                const double danger = GetDanger(angle, proposedLeftAngle);
+                const double danger = GetDanger(pointProposedLeft, proposedLeftAngle);
                 dangerControl.score = danger + dirBonus;
                 dangerControl.func = [unit, resultAngle](POrder &order) -> std::vector<OrderType> {
                     return ApplyLookTo(unit->position + Vec2{resultAngle} * 30., order);
@@ -562,7 +571,6 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
         if (radarState == 2 &&
             std::abs(AngleDiff(startingAngle, unit->direction.toRadians())) < unit->currentFieldOfView * .5) {
             // got full rotation
-            std::cerr << SubstractAngle(unit->direction.toRadians(), unit->currentFieldOfView * .5) << std::endl;
             lastEndTick = game.currentTick;
         }
         radarState = radarState == 2 ? 1 : 0;

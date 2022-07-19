@@ -126,18 +126,21 @@ std::vector<OrderType> ApplyMoveTo(const Unit &unit,
                                    const double maxSpeed,
                                    POrder &order) {
     DRAW(DrawCross(newPosition, 0.5, debugging::Color(1., 0., 1., 0.5), debugInterface););
+    if (unit.remainingSpawnTime.has_value()) {
+        order.movePoint = newPosition;
+        order.maxMoveSpeed = maxSpeed;
+        return {OrderType::kMove};
+    }
     auto [obstacle, point] = ClosestIntersectionPoint(unit.position, newPosition, filter.closeObstacles);
     if (obstacle == nullptr) {
         order.movePoint = newPosition;
         order.maxMoveSpeed = maxSpeed;
         return {OrderType::kMove};
     }
-    Vec2 dir = point - obstacle->position;
-    if (dir.sqrNorm() < 1e-10) { // zero vector
-        dir = (obstacle->position - unit.position).rotate90();
-    }
-    dir.toLen(obstacle->radius + Constants::INSTANCE.unitRadius);
-    order.movePoint = obstacle->position + dir;
+    auto points = TangentialPoints(unit.position, obstacle->position, obstacle->radius + Constants::INSTANCE.unitRadius);
+    order.movePoint = (newPosition - points.second).sqrNorm() > (newPosition - points.first).sqrNorm() ? points.first
+                                                                                                       : points.second;
+
     order.maxMoveSpeed = maxSpeed;
     return {OrderType::kMove};
 }
