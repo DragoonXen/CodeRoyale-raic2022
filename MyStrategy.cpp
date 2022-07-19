@@ -183,7 +183,7 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
             unknownIncomingDamageSum[unit->id] = sumDamage;
 
 #ifdef DEBUG_INFO
-            if ((old_unit->position - unit->position).norm() > 1e-10) {
+            if ((old_unit->position - unit->position).norm() > 1e-8) {
                 std::cerr << game.currentTick << " pos expected " << old_unit->position.toString() << " actual "
                           << unit->position.toString() << " diff " << (old_unit->position - unit->position).norm()
                           << std::endl;

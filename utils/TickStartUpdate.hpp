@@ -175,6 +175,7 @@ void UpdateUnitFromInfo(Unit& unit, ProjectileUnitsProposals& proposal) {
     } else {
         --unit.ammo[proposal.weaponType];
     }
+    unit.remainingSpawnTime.reset();
     Constants& constants = Constants::INSTANCE;
     unit.nextShotTick =
             proposal.tick + (constants.ticksPerSecond / constants.weapons[proposal.weaponType].roundsPerSecond + 1e-3);
@@ -230,6 +231,7 @@ void UpdateUnits(Game &game, std::optional<Game> &lastTick, const std::vector<Un
             }
         }
         for (auto unit: unitsToAdd) {
+            TickRespawnTime(*unit);
             game.units.push_back(*unit);
         }
     }

@@ -189,6 +189,15 @@ inline std::pair<Vec2, Vec2> TangentialPoints(Vec2 from, Vec2 to, const double r
             Vec2{x0 - b * mult, y0 + a * mult} + from};
 }
 
+inline void TickRespawnTime(Unit& unit) {
+    if (unit.remainingSpawnTime.has_value()) {
+        *unit.remainingSpawnTime -= Constants::INSTANCE.tickTime;
+        if (*unit.remainingSpawnTime < 1e-5) {
+            unit.remainingSpawnTime.reset();
+        }
+    }
+}
+
 #ifdef DEBUG_INFO
 #define VERIFY(a, b) {if (!(a)){std::cerr << (b) << std::endl; getchar();exit(-1);}}
 #else

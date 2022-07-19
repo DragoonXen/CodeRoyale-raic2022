@@ -76,6 +76,7 @@ Simulate(Unit unit, const Game &game, const ComplexMoveRule &moveRule, size_t de
     ComplexMoveRuleViewer ruleViewer{moveRule};
     ZoneMover zoneMover{game.zone};
     constexpr double damageExp = 1.001;
+    constexpr double kDeathPenalty = 1e7;
     for (size_t tick = 0; tick != deep; ++tick) {
         const auto& rule = ruleViewer.nextRule();
         const auto& moveDirection = rule.moveDirection;
@@ -91,6 +92,7 @@ Simulate(Unit unit, const Game &game, const ComplexMoveRule &moveRule, size_t de
             unit.health -= constants.zoneDamagePerTick;
             damagePenalty += constants.zoneDamagePerTick;
             if (unit.health < 1e-3) {
+                damagePenalty += kDeathPenalty;
                 for (++tick; tick != deep; ++tick) {
                     damagePenalty *= damageExp;
                 }
@@ -109,6 +111,43 @@ Simulate(Unit unit, const Game &game, const ComplexMoveRule &moveRule, size_t de
                                         damage == 0 ? debugging::Color(1., .7, 0., .1) :
                                         debugging::Color(1., 0., 0., .1));
         );
+        if (unit.remainingSpawnTime.has_value()) {
+            if (passedTime + 1e-5 < *unit.remainingSpawnTime) {
+                continue;
+            }
+            const bool hasCollision = [&unit, &game, &passedTime]() {
+                const auto &obstacles = constants.Get(unit.position);
+                for (auto &obstacle: obstacles) {
+                    if ((obstacle->position - unit.position).sqrNorm() <=
+                        sqr(obstacle->radius + constants.unitRadius)) {
+                        return true;
+                    }
+                }
+                for (auto& checkUnit : game.units) {
+                    if (checkUnit.id == unit.id || checkUnit.remainingSpawnTime.value_or(0) > passedTime) {
+                        continue;
+                    }
+                    if ((checkUnit.position - unit.position).sqrNorm() < sqr(Constants::INSTANCE.unitRadius * 2)) {
+                        return true;
+                    }
+                }
+                return false;
+            }();
+            if (hasCollision) {
+                unit.health -= constants.spawnCollisionDamagePerTick;
+                damagePenalty += constants.spawnCollisionDamagePerTick;
+                if (unit.health < 1e-3) {
+                    damagePenalty += kDeathPenalty;
+                    for (++tick; tick != deep; ++tick) {
+                        damagePenalty *= damageExp;
+                    }
+                    return {unit, damagePenalty, firstProjectile};
+                }
+            } else {
+                unit.remainingSpawnTime.reset();
+            }
+            continue;
+        }
         for (size_t i = 0; i != remained_projectiles.size(); ++i) {
             const auto projectile = remained_projectiles[i];
             if (projectile->lifeTime <= passedTime) {
@@ -134,6 +173,7 @@ Simulate(Unit unit, const Game &game, const ComplexMoveRule &moveRule, size_t de
         damagePenalty += std::min(damage, unit.health + unit.shield);
         ApplyDamage(unit, damage, game.currentTick);
         if (unit.health < 1e-3) {
+            damagePenalty += kDeathPenalty;
             for (++tick; tick != deep; ++tick) {
                 damagePenalty *= damageExp;
             }
@@ -171,14 +211,14 @@ inline UnitOrder ApplyAvoidRule(Unit& unit, const MoveRule& selected_rule) {
     unit.aim = CalcResultAim(selected_rule.keepAim, unit.aim, unit.weapon);
 
     const auto velocity =
-            MaxSpeedVector(unit.position, unit.direction, selected_rule.moveDirection, CalcAimSpeedModifier(unit))
+            MaxSpeedVector(unit, selected_rule.moveDirection, CalcAimSpeedModifier(unit))
                     .LimitLength(selected_rule.speedLimit);
     UnitOrder order;
     order.targetDirection = unit.direction;
     order.targetVelocity = velocity;
     unit.velocity = ResultSpeedVector(unit.velocity, velocity);
     if (unit.remainingSpawnTime.has_value() || unit.velocity.sqrNorm() < 1e-20) {
-        unit.position += velocity * Constants::INSTANCE.tickTime;
+        unit.position += unit.velocity * Constants::INSTANCE.tickTime;
     } else {
         updateForCollision(unit.position, unit.velocity);
     }

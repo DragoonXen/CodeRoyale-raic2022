@@ -40,6 +40,7 @@ public:
     double spawnTime;
     // Damage dealt to units trying to spawn in incorrect position per second
     double spawnCollisionDamagePerSecond;
+    double spawnCollisionDamagePerTick;
     // Time required to perform looting actions (in seconds)
     double lootingTime;
     // Number of bot players (teams)
@@ -131,6 +132,7 @@ public:
 
     void Update() {
         tickTime = 1. / ticksPerSecond;
+        spawnCollisionDamagePerTick = spawnCollisionDamagePerSecond * tickTime;
         zoneSpeedPerTick = zoneSpeed * tickTime;
         zoneDamagePerTick = zoneDamagePerSecond * tickTime;
         healthRegenerationDelayTicks = (int)std::round(healthRegenerationDelay / tickTime);

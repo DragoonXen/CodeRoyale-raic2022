@@ -82,6 +82,13 @@ inline Vec2 MaxSpeedVector(Vec2 position, Vec2 direction, Vec2 target, const dou
     return (Vec2{x0 - b * mult, y0 + a * mult} - position) * aimModifier;
 }
 
+inline Vec2 MaxSpeedVector(Unit &unit, Vec2 target, const double aimModifier = 1) {
+    if (unit.remainingSpawnTime.has_value()) {
+        return (target - unit.position).toLen(Constants::INSTANCE.spawnMovementSpeed);
+    }
+    return MaxSpeedVector(unit.position, unit.direction, target, aimModifier);
+}
+
 inline Vec2 ResultSpeedVector(Vec2 currentVector, Vec2 targetVector) {
     const Constants &constants = Constants::INSTANCE;
     Vec2 change_vector = targetVector - currentVector;
