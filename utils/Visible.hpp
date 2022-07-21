@@ -216,6 +216,9 @@ IsVisible(Vec2 point, const std::vector<Unit *> &myUnits, const std::vector<Unit
           const std::unordered_map<int, VisibleFilter> &filters) {
     for (const auto unit: myUnits) {
         if (IsVisible<filter>(unit->position, unit->direction, unit->currentFieldOfView, point, filters.at(unit->id))) {
+            if (!Constants::INSTANCE.viewBlocking) {
+                return true;
+            }
             bool unitBlock = false;
             for (const auto &otherUnit: allUnits) {
                 if (otherUnit.id == unit->id || otherUnit.remainingSpawnTime.has_value()) {
