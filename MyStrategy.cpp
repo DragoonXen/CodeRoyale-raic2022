@@ -753,7 +753,7 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
             }
             auto newTask = task;
             newTask.evalData = data;
-            newTask.penalty = priorityChange * 20;
+            newTask.penalty = priorityChange * 50;
             newTask.score -= newTask.penalty;
             tasks.push(newTask);
             continue;
