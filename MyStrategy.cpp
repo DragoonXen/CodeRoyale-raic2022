@@ -316,8 +316,8 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
 //                if (!IsReachable(unit->position, enUnit->position, visibilityFilters[unit->id])) {
 //                    moveTask.score /= 10.;
 //                }
-                moveTask.preEval = [unit, enUnit, &visibilityFilter = visibilityFilters[unit->id], &myUnits, &zoneMover]() -> std::tuple<double, std::any> {
-                    return {0., ApplyMoveToUnitTask(*unit, myUnits, *enUnit, visibilityFilter, zoneMover)};
+                moveTask.preEval = [unit, enUnit, &visibilityFilter = visibilityFilters[unit->id], &myUnits, &zoneMover, &dangerMatrix, &game]() -> std::tuple<double, std::any> {
+                    return {0., ApplyMoveToUnitTask(*unit, myUnits, *enUnit, visibilityFilter, zoneMover, dangerMatrix, game)};
                 };
 
                 moveTask.func = [unit, &visibilityFilter = visibilityFilters[unit->id]](
@@ -332,8 +332,7 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
                 Task attackTask{0, unit->id,
                                 std::to_string(unit->id) + " attack enemy " + std::to_string(enUnit->id),
                                 {OrderType::kAction, OrderType::kRotate}};
-
-                attackTask.score = moveTask.score;
+                attackTask.score = moveTask.score * std::max((unit->aim - 0.45) * 20., 1.);
                 attackTask.func = [unit, &myUnits, enUnit, tick = game.currentTick, &visibilityFilters, &mem = this->unitMovementMem](
                         const std::any &evalData, POrder &order) -> std::vector<OrderType> {
                     return ApplyAttackTask(*unit, myUnits, *enUnit, tick, visibilityFilters, mem, order);
@@ -548,7 +547,7 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
         };
         const auto pickWeapon =
                 [&weapons, &game, &pickTask, unit](int weaponType, double priority) {
-                     if (priority <= 0.) {
+                    if (priority <= 0.) {
                         return;
                     }
                     size_t count = 10;
@@ -575,7 +574,7 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
                 pickWeapon(i, priority[i] - (unit->weapon ? priority[*unit->weapon] : 0));
             }
             for (int i = 0; i != 3; ++i) {
-                priority[i] = kRelativeWeight[i]  - priority[i];
+                priority[i] = kRelativeWeight[i] - priority[i];
                 if (*unit->weapon == i) {
                     priority[i] *= 2;
                 }
@@ -643,14 +642,14 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
         if (dangerSum < 1e-2) {
             continue;
         }
-        auto& filteredObstacles = visibilityFilters[unit->id].closeObstacles;
+        auto &filteredObstacles = visibilityFilters[unit->id].closeObstacles;
 
         const auto directionBonus = [moveDirection = unit->velocity.sqrNorm() > 1e-5 ? unit->velocity.toRadians() : 0](
                 auto direction) {
             return 1e-5 * (1. - std::abs(AngleDiff(direction, moveDirection)) / M_PI);
         };
 //        const auto currDirection = unit->direction.toRadians();
-        for (const auto& enUnit : enemyUnits) {
+        for (const auto &enUnit: enemyUnits) {
             const Vec2 diff = enUnit->position - unit->position;
             if (diff.sqrNorm() > sqr(55.)) {
                 continue;
@@ -770,14 +769,14 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
      *  ==================================================================================
      */
     std::unordered_map<int, POrder> pOrders;
-    for (Unit* unit: myUnits) {
+    for (Unit *unit: myUnits) {
         pOrders[unit->id] = POrder();
     }
     std::unordered_map<int, std::vector<std::any>> usedData;
     incomingDamage.clear();
-    for (;!tasks.empty(); tasks.pop()) {
-        const auto& task = tasks.top();
-        POrder& curr = pOrders[task.unitId];
+    for (; !tasks.empty(); tasks.pop()) {
+        const auto &task = tasks.top();
+        POrder &curr = pOrders[task.unitId];
         if (!curr.IsAbleToAcceptTask(task.actionTypes)) {
             continue;
         }
@@ -868,7 +867,7 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
                                      {{rule.moveDirection, rule.moveDirection, false, std::numeric_limits<double>::infinity()},
                                                    0}}));
         }
-        for (const auto& rule : basicRules) {
+        for (const auto &rule: basicRules) {
             complexRules.emplace_back(rule);
         }
         const size_t notApplyAimAboveId = complexRules.size();
@@ -908,7 +907,7 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
 
     // remove picker loot
     std::unordered_set<int> pickedIds;
-    for (auto& [unitId, order] : orders) {
+    for (auto &[unitId, order]: orders) {
         if (!order.action) {
             continue;
         }
@@ -931,7 +930,7 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
         }
     }
     for (size_t i = 0; !pickedIds.empty() && i != game.loot.size(); ++i) {
-        auto& id = game.loot[i].id;
+        auto &id = game.loot[i].id;
         if (pickedIds.count(id)) {
             pickedIds.erase(id);
             game.loot[i] = game.loot.back();
