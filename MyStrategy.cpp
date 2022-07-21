@@ -111,29 +111,7 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
         unitDanger[unit->id] = std::unordered_map<int, double>();
         auto &myUnitMap = unitDanger[unit->id];
         for (const auto &enemyUnit: enemyUnits) {
-            double danger = 1.;
-            const Vec2 distanceVec = unit->position - enemyUnit->position;
-            // angle danger
-            const double angleDiff = std::abs(AngleDiff(enemyUnit->direction.toRadians(), distanceVec.toRadians()));
-            // normalize from 0 to M_PI * 5 / 6
-            const auto diff = std::min(std::max(angleDiff - (M_PI / 6), 0.), M_PI * 2 / 3);
-            danger *= 1. - diff / (M_PI * 5 / 6);
-            // distance danger
-            constexpr double maxDangerDistance = 7.;
-            const double distance = distanceVec.norm();
-            const double dangerDistanceCheck = maxDangerDistance / std::max(distance, maxDangerDistance);
-            danger *= dangerDistanceCheck;
-            // weapon danger
-            if (enemyUnit->weapon && enemyUnit->ammo[*enemyUnit->weapon] > 0) {
-                constexpr double kWeaponDanger[] = {0.34, .6666, 1.};
-                danger *= kWeaponDanger[*enemyUnit->weapon];
-                if (*enemyUnit->weapon == 2 && distance < 10.) {
-                    danger *= 1.55;
-                }
-            } else {
-                danger *= 1e-2;
-            }
-            myUnitMap[enemyUnit->id] = danger;
+            myUnitMap[enemyUnit->id] = CalculateDanger(unit->position, *enemyUnit);
 //            DRAW({
 //                     debugInterface->addPlacedText(enemyUnit->position + distanceVec * .5,
 //                                                   std::to_string(enemyUnit->id) + " danger " + std::to_string(danger),
@@ -214,6 +192,35 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
                                                debugging::Color(0, 0, 0, 1));
              }
          });
+//    DRAW({
+//             if (myUnits.empty()) {
+//                 return;
+//             }
+//             auto pos = myUnits[0]->position;
+//             double minVal = std::numeric_limits<double>::infinity();
+//             double maxVal = -std::numeric_limits<double>::infinity();
+//             for (double dx = -30.; dx <= 30; dx += 1.) {
+//                 for (double dy = -30.; dy <= 30; dy += 1.) {
+//                     //MyStrategy& strategy, Vec2 pos, model::Game& game, const std::vector<model::Unit> units
+//                     auto val = EvaluateDanger(*this->dangerMatrix, pos + Vec2{dx, dy}, game);
+//                     minVal = std::min(val, minVal);
+//                     maxVal = std::max(val, maxVal);
+//                 }
+//             }
+//             double diffVal = 1. / (maxVal - minVal);
+//             debugInterface->setAutoFlush(false);
+//             for (double dx = -30.; dx <= 30; dx += 1.) {
+//                 double posX = Constants::toI(pos.x + dx);
+//                 for (double dy = -30.; dy <= 30; dy += 1.) {
+//                     double posY = Constants::toI(pos.y + dy);
+//                     auto val = EvaluateDanger(*this->dangerMatrix, {posX, posY}, game);
+//                     debugInterface->addRect({posX - 0.5, posY - 0.5}, {1., 1.},
+//                                             debugging::Color((val - minVal) * diffVal, 0., 0., .8));
+//                 }
+//             }
+//             debugInterface->flush();
+//             debugInterface->setAutoFlush(true);
+//         });
 
     Vec2 centerPoint = {0., 0.};
     for (auto& unit : myUnits) {
@@ -370,21 +377,28 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
             if ((loot.position - game.zone.currentCenter).sqrNorm() >= sqr(game.zone.currentRadius)) {
                 return false;
             }
+//            DRAW({
+//                     debugInterface->addPlacedText(loot.position, to_string_p(priority, 2), {0.5, 0.5}, 0.1,
+//                                                   debugging::Color(0., 0., 0., 1.));
+//                 });
+
             if (distance <= Constants::INSTANCE.unitRadius && !unit->action.has_value() &&
-                !unit->remainingSpawnTime.has_value() &&
-                unit->aim < 1e-5) {
+                !unit->remainingSpawnTime.has_value()) {
                 Task pickTask{6, unit->id,
                               std::to_string(unit->id) + " pick up " + std::to_string(loot.id) + "|" +
                               loot.position.toString(),
                               {OrderType::kAction}};
                 pickTask.score = priority;
                 pickTask.taskData = loot.id;
-                pickTask.func = [unit, &loot](
-                        POrder &order) -> std::vector<OrderType> {
+                pickTask.func = [unit, &loot](POrder &order) -> std::vector<OrderType> {
                     return ApplyPickUp(*unit, loot, order);
                 };
                 tasks.push(pickTask);
-            } else {
+            }
+            if (distance > Constants::INSTANCE.unitRadius || unit->action.has_value() ||
+                unit->remainingSpawnTime.has_value() ||
+                unit->aim > 1e-5) {
+                bool inside = distance <= Constants::INSTANCE.unitRadius;
                 Task moveTask{6, unit->id,
                               std::to_string(unit->id) + " move to pick up " + std::to_string(loot.id) + "|" +
                               loot.position.toString(),
@@ -737,7 +751,9 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
         if (unit->playerId == game.myId && !unit->remainingSpawnTime.has_value() &&
             (unit->position - loot->position).sqrNorm() <= sqr(constants.unitRadius) &&
             !unit->action.has_value()) {
-            pickedIds.insert(pickup->loot);
+            if (unit->aim < 1e-5) {
+                pickedIds.insert(pickup->loot);
+            }
 #ifdef DEBUG_INFO
         } else {
             std::cerr << "Unit " << unitId << " can't pick up loot with id " << loot->id << std::endl;
