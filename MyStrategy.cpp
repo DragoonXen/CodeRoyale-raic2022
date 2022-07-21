@@ -48,6 +48,61 @@ namespace {
                                                debugging::Color(0, 0, 0, 1));
              });
     }
+
+    inline double EvaluateDanger(Vec2 pos, std::vector<std::vector<std::pair<int, double>>>& dangerMatrix, const model::Game& game) {
+        const auto& constants = Constants::INSTANCE;
+        Vec2 targetPos(constants.toI(pos.x), constants.toI(pos.y));
+        const int posX = constants.toI(pos.x) - constants.minX;
+        const int posY = constants.toI(pos.y) - constants.minY;
+
+        auto& value = dangerMatrix[posX][posY];
+        if (value.first == game.currentTick) {
+            return value.second;
+        }
+        value.first = game.currentTick;
+
+        // angle, danger, playerId
+        std::vector<std::tuple<double, double, int >> unitsDanger;
+        double sumDanger = 0.;
+        for (auto& unit : game.units) {
+            if (unit.playerId == game.myId) {
+                continue;
+            }
+            auto positionDiff = unit.position - targetPos;
+            unitsDanger.emplace_back(positionDiff.toRadians(), CalculateDanger(targetPos, unit),
+                                     unit.playerId);
+            // distance of 5
+            if (positionDiff.sqrNorm() < sqr(7.)) {
+                sumDanger += std::get<1>(unitsDanger.back());
+            }
+        }
+        constexpr double kMinAngleDifference = M_PI / 3.6;  // 50 degrees
+        constexpr double kMinCoeff = 0.;
+        constexpr double kMaxAngleDifference = M_PI * (2. / 3.);  // 120 degrees
+        constexpr double kMaxCoeff = 1.;
+        constexpr double kDiffPerScore = (kMaxCoeff - kMinCoeff) / (kMaxAngleDifference - kMinAngleDifference);
+        for (size_t i = 0; i != unitsDanger.size(); ++i) {
+            auto& [angle, danger, playerId] = unitsDanger[i];
+            for (size_t j = i + 1; j != unitsDanger.size(); ++j) {
+                auto& [angle2, danger2, playerId2] = unitsDanger[j];
+                const double angleDiff = std::abs(AngleDiff(angle, angle2));
+                if (angleDiff <= kMinAngleDifference) {
+                    sumDanger += kMinCoeff * std::min(danger, danger2);
+                } else if (angleDiff >= kMaxAngleDifference) {
+                    sumDanger += kMaxCoeff * std::min(danger, danger2);
+                } else {
+                    sumDanger += kDiffPerScore * (angleDiff - kMinAngleDifference) * std::min(danger, danger2);
+                }
+            }
+        }
+        value.second = sumDanger;
+        return value.second;
+    }
+
+    double EvaluatePathDanger(Vec2 from, Vec2 to, std::vector<std::vector<std::pair<int, double>>> &dangerMatrix,
+                              const model::Game &game) {
+        return EvaluateDanger(to, dangerMatrix, game);
+    }
 }
 
 std::unordered_map<int, std::function<bool(const std::any&, const std::any&)>> MyStrategy::taskFilter;
@@ -60,6 +115,12 @@ MyStrategy::MyStrategy(const model::Constants &constants) {
         return std::any_cast<int>(newTask) == std::any_cast<int>(applied);
     };
     TimeMeasure::end(0);
+    {
+        std::vector<std::pair<int, double>> baseDanger(Constants::INSTANCE.obstacleMatrix[0].size());
+        dangerMatrix = std::make_shared<std::vector<std::vector<std::pair<int, double>>>>();
+        std::cerr << dangerMatrix->size() << std::endl;
+        dangerMatrix->resize(Constants::INSTANCE.obstacleMatrix.size(), baseDanger);
+    }
 }
 
 model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *debugInterface) {
@@ -235,6 +296,9 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
     }
     std::unordered_map<int, const Loot*> lootById;
     std::priority_queue<Task> tasks;
+    const auto evalPathDanger = [&game, &dangerMatrix = this->dangerMatrix](Vec2 from, Vec2 to) {
+        return EvaluatePathDanger(from, to, *dangerMatrix, game);
+    };
     if (!enemyUnits.empty()) {
         for (const Unit* unit: myUnits) {
             if (!unit->weapon.has_value() || unit->ammo[*unit->weapon] == 0) {
@@ -268,8 +332,14 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
 //                if (!IsReachable(unit->position, enUnit->position, visibilityFilters[unit->id])) {
 //                    moveTask.score /= 10.;
 //                }
-                moveTask.func = [unit, enUnit, &visibilityFilters, &myUnits](POrder &order) -> std::vector<OrderType> {
-                    return ApplyMoveToUnitTask(*unit, myUnits, *enUnit, visibilityFilters, order);
+                moveTask.preEval = [unit, enUnit, &visibilityFilter = visibilityFilters[unit->id], &myUnits, &evalPathDanger]() -> std::tuple<double, std::any> {
+                    return {0., ApplyMoveToUnitTask(*unit, myUnits, *enUnit, visibilityFilter)};
+                };
+
+                moveTask.func = [unit, &visibilityFilter = visibilityFilters[unit->id]](
+                        const std::any &evalData, POrder &order) -> std::vector<OrderType> {
+                    const auto &[position, maxSpeed] = std::any_cast<DestinationWithMaxSpeed>(evalData);
+                    return ApplyMoveTo(*unit, position, visibilityFilter, maxSpeed, order);
                 };
                 tasks.push(moveTask);
                 if (item.first > 30. * 30.) { // no attack task fot this case. Going to danger control task, type 9
@@ -281,7 +351,7 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
 
                 attackTask.score = moveTask.score;
                 attackTask.func = [unit, &myUnits, enUnit, tick = game.currentTick, &visibilityFilters](
-                        POrder &order) -> std::vector<OrderType> {
+                        const std::any& evalData, POrder &order) -> std::vector<OrderType> {
                     return ApplyAttackTask(*unit, myUnits, *enUnit, tick, visibilityFilters, order);
                 };
                 tasks.push(attackTask);
@@ -306,7 +376,7 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
                           {OrderType::kMove}};
             moveTask.score = 1e100;
             moveTask.func = [unit, moveTo = *point_move_to, &filter = visibilityFilters[unit->id]](
-                    POrder &order) -> std::vector<OrderType> {
+                    const std::any &evalData, POrder &order) -> std::vector<OrderType> {
                 return ApplyMoveTo(*unit, moveTo, filter, std::numeric_limits<double>::infinity(), order);
             };
             tasks.push(moveTask);
@@ -316,7 +386,7 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
                           std::to_string(unit->id) + " Manual look to point " + point_look_to->toString(),
                           {OrderType::kRotate}};
             lookTask.score = 1e100;
-            lookTask.func = [lookTo = *point_look_to](POrder &order) -> std::vector<OrderType> {
+            lookTask.func = [lookTo = *point_look_to](const std::any& evalData, POrder &order) -> std::vector<OrderType> {
                 return ApplyLookTo(lookTo, order);
             };
             tasks.push(lookTask);
@@ -325,16 +395,24 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
     for (const Unit *unit: myUnits) {
         Task moveTask{4, unit->id, std::to_string(unit->id) + " Explore zone ", {OrderType::kMove}};
         moveTask.score = 0.;
-        moveTask.func = [unit, &zone = game.zone, &filter = visibilityFilters[unit->id]](
-                POrder &order) -> std::vector<OrderType> {
+        moveTask.preEval = [unit, &zone = game.zone, &filter = visibilityFilters[unit->id], &evalPathDanger]() -> std::tuple<double, std::any> {
             Vec2 zoneDst = unit->position - zone.currentCenter;
             if (zoneDst.sqrNorm() < 1.) {
                 zoneDst = {1., 0};
             }
             const Vec2 moveDirection = zone.currentCenter + Vec2(zoneDst.toRadians() + M_PI / 6).toLen(
                     std::max(0., zone.currentRadius - Constants::INSTANCE.viewDistance));
-            return ApplyMoveTo(*unit, moveDirection, filter, std::numeric_limits<double>::infinity(), order);
+            // evaluate here
+            return {evalPathDanger(unit->position, moveDirection),
+                    DestinationWithMaxSpeed{moveDirection, std::numeric_limits<double>::infinity()}};
         };
+
+        moveTask.func = [unit, &visibilityFilter = visibilityFilters[unit->id]](
+                const std::any &evalData, POrder &order) -> std::vector<OrderType> {
+            const auto &[position, maxSpeed] = std::any_cast<DestinationWithMaxSpeed>(evalData);
+            return ApplyMoveTo(*unit, position, visibilityFilter, maxSpeed, order);
+        };
+
         tasks.push(moveTask);
         Task lookTask{5, unit->id,
                       std::to_string(unit->id) + " Look to movement direction",
@@ -343,7 +421,7 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
         ///here
         lookTask.func = [lookTo =
         unit->velocity.sqrNorm() > 1e-5 ? unit->position + unit->velocity.toLen(10.) : game.zone.currentCenter](
-                POrder &order) -> std::vector<OrderType> {
+                const std::any &evalData, POrder &order) -> std::vector<OrderType> {
             return ApplyLookTo(lookTo, order);
         };
         tasks.push(lookTask);
@@ -372,8 +450,8 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
         std::sort(weapons.begin(), weapons.end());
         std::sort(ammos.begin(), ammos.end());
         std::sort(shieldPotions.begin(), shieldPotions.end());
-        const auto pickTask = [&unit, &visibilityFilters, &tasks, &game](const double distance, const Loot &loot,
-                                                                  const double priority) {
+        const auto pickTask = [&unit, &visibilityFilters, &tasks, &game, &evalPathDanger]
+                (const double distance, const Loot &loot, const double priority) {
             if ((loot.position - game.zone.currentCenter).sqrNorm() >= sqr(game.zone.currentRadius)) {
                 return false;
             }
@@ -390,7 +468,7 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
                               {OrderType::kAction}};
                 pickTask.score = priority;
                 pickTask.taskData = loot.id;
-                pickTask.func = [unit, &loot](POrder &order) -> std::vector<OrderType> {
+                pickTask.func = [unit, &loot](const std::any &evalData, POrder &order) -> std::vector<OrderType> {
                     return ApplyPickUp(*unit, loot, order);
                 };
                 tasks.push(pickTask);
@@ -405,10 +483,17 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
                               {OrderType::kMove}};
                 moveTask.score = priority / std::max(distance, 1.);
                 moveTask.taskData = loot.id;
-                moveTask.func = [unit, &loot, &visibilityFilters](
-                        POrder &order) -> std::vector<OrderType> {
-                    return ApplyMoveTo(*unit, loot.position, visibilityFilters[unit->id],
-                                       std::numeric_limits<double>::infinity(), order);
+                //const std::any &evalData,
+                moveTask.preEval = [unit, &loot, &evalPathDanger, inside]() -> std::tuple<double, std::any> {
+                    return {evalPathDanger(unit->position, loot.position),
+                            DestinationWithMaxSpeed{loot.position,
+                                                    inside ? 1. : std::numeric_limits<double>::infinity()}};
+                };
+
+                moveTask.func = [unit, &visibilityFilters](
+                        const std::any &evalData, POrder &order) -> std::vector<OrderType> {
+                    const auto &[position, maxSpeed] = std::any_cast<DestinationWithMaxSpeed>(evalData);
+                    return ApplyMoveTo(*unit, position, visibilityFilters[unit->id], maxSpeed, order);
                 };
                 tasks.push(moveTask);
             }
@@ -467,8 +552,7 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
         if (unit->shield + constants.shieldPerPotion <= constants.maxShield && unit->shieldPotions > 0) {
             Task useShieldPotion{8, unit->id, std::to_string(unit->id) + " use shield potion ", {OrderType::kAction}};
             useShieldPotion.score = 800. * (constants.maxShield - unit->shield) / constants.shieldPerPotion;
-            useShieldPotion.func = [](
-                    POrder &order) -> std::vector<OrderType> {
+            useShieldPotion.func = [](const std::any &evalData, POrder &order) -> std::vector<OrderType> {
                 order.action = std::make_shared<ActionOrder::UseShieldPotion>();
                 return {OrderType::kAction};
             };
@@ -477,10 +561,12 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
 
         if (unit->shieldPotions < constants.maxShieldPotionsInInventory) {
             int diff = constants.maxShieldPotionsInInventory - unit->shieldPotions;
-            // 200
+            if (unit->action.has_value() && unit->action->actionType == ActionType::USE_SHIELD_POTION) {
+                ++diff;
+            }
             for (auto &item: shieldPotions) {
                 const Loot &loot = game.loot[item.second];
-                pickTask((unit->position - loot.position).norm(), loot, 200 * std::min(loot.amount, diff) * sqr(diff));
+                pickTask((unit->position - loot.position).norm(), loot, 10 * std::min(loot.amount, diff) * sqr(diff));
             }
         }
     }
@@ -543,7 +629,8 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
                 const double dirBonus = directionBonus(resultAngle);
                 const double danger = GetDanger(proposedRightAngle, pointProposedRight);
                 dangerControl.score = danger + dirBonus;
-                dangerControl.func = [unit, resultAngle](POrder &order) -> std::vector<OrderType> {
+                dangerControl.func = [unit, resultAngle](const std::any &evalData,
+                                                         POrder &order) -> std::vector<OrderType> {
                     return ApplyLookTo(unit->position + Vec2{resultAngle} * 30., order);
                 };
                 tasks.push(dangerControl);
@@ -556,7 +643,8 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
                 const double dirBonus = directionBonus(resultAngle);
                 const double danger = GetDanger(pointProposedLeft, proposedLeftAngle);
                 dangerControl.score = danger + dirBonus;
-                dangerControl.func = [unit, resultAngle](POrder &order) -> std::vector<OrderType> {
+                dangerControl.func = [unit, resultAngle](const std::any &evalData,
+                                                         POrder &order) -> std::vector<OrderType> {
                     return ApplyLookTo(unit->position + Vec2{resultAngle} * 30., order);
                 };
                 tasks.push(dangerControl);
@@ -569,7 +657,7 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
                 const double danger = GetDanger(angle - unit->currentFieldOfView / 2.,
                                                 angle + unit->currentFieldOfView / 2.);
                 dangerControl.score = danger + dirBonus;
-                dangerControl.func = [unit, angle](POrder &order) -> std::vector<OrderType> {
+                dangerControl.func = [unit, angle](const std::any &evalData, POrder &order) -> std::vector<OrderType> {
                     return ApplyLookTo(unit->position + Vec2{angle} * 30., order);
                 };
                 tasks.push(dangerControl);
@@ -596,8 +684,8 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
 
         Task radarTask{10, unit->id, std::to_string(unit->id) + " radar mode", {OrderType::kRotate}};
         radarTask.score = -0.5;// + unknownIncomingDamageSum[unit->id];
-        radarTask.func = [unit, &radarState = radarState, &startingAngle = startingAngle](
-                POrder &order) -> std::vector<OrderType> {
+        radarTask.func = [unit, &radarState = radarState, &startingAngle = startingAngle](const std::any &evalData,
+                                                                                          POrder &order) -> std::vector<OrderType> {
             if (radarState == 0) {
                 startingAngle = AddAngle(unit->direction.toRadians(), unit->currentFieldOfView * .5);
             }
@@ -640,6 +728,33 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
             std::cerr << "[No function implemented]: " << task.type << ": " << task.description << std::endl;
         }
 #endif
+//        if (task.preEval != nullptr && !task.evalData.has_value()) {
+//            const auto &[priorityChange, data] = task.preEval();
+//            if (!data.has_value()) {
+//                continue;
+//            }
+//            auto newTask = task;
+//            newTask.evalData = data;
+//            newTask.penalty = priorityChange * 3700;
+//            newTask.score -= newTask.penalty;
+//            tasks.push(newTask);
+//            continue;
+//        }
+//        if (curr.Accept(task) && task.taskData.has_value()) {
+//            usedData.try_emplace(task.type).first->second.push_back(task.taskData);
+//        }
+        if (task.preEval != nullptr && !task.evalData.has_value()) {
+            const auto &[priorityChange, data] = task.preEval();
+            if (!data.has_value()) {
+                continue;
+            }
+            auto newTask = task;
+            newTask.evalData = data;
+            newTask.penalty = priorityChange * 3700;
+            newTask.score -= newTask.penalty;
+            tasks.push(newTask);
+            continue;
+        }
         if (curr.Accept(task) && task.taskData.has_value()) {
             usedData.try_emplace(task.type).first->second.push_back(task.taskData);
         }

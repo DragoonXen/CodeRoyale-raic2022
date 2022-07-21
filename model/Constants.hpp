@@ -112,8 +112,7 @@ public:
     std::vector<model::Obstacle> obstacles;
 
     static constexpr int collision_zone_offset = 30;
-
-    std::vector<std::vector<std::vector<const Obstacle*>>> obstacle_matrix;
+    std::vector<std::vector<std::vector<const Obstacle*>>> obstacleMatrix;
     int minX, minY;
 
     Constants() = default;
@@ -126,7 +125,7 @@ public:
     // Write Constants to output stream
     void writeTo(OutputStream& stream) const;
 
-    inline int toI(double val) const {
+    inline static int toI(double val) {
         return val + 0.5;
     }
 
@@ -164,7 +163,7 @@ public:
         this->minX = toI(minX);
         this->minY = toI(minY);
         std::vector<std::vector<const Obstacle *>> base((int) (maxY - minY));
-        obstacle_matrix.resize((int) (maxX - minX), base);
+        obstacleMatrix.resize((int) (maxX - minX), base);
         constexpr double addition_radius = 2.;
         const double addition =
                 std::max(unitRadius, /*weapons*/ weapons[2].projectileSpeed / ticksPerSecond) + addition_radius;
@@ -176,7 +175,7 @@ public:
             const int toY = y + diff + 1;
             for (int cx = x - diff; cx != toX; ++cx) {
                 for (int cy = y - diff; cy != toY; ++cy) {
-                    obstacle_matrix[cx][cy].push_back(&obstacle);
+                    obstacleMatrix[cx][cy].push_back(&obstacle);
                 }
             }
         }
@@ -185,7 +184,7 @@ public:
     inline const std::vector<const Obstacle *> &Get(double x, double y) const {
         const int posX = toI(x) - minX;
         const int posY = toI(y) - minY;
-        return obstacle_matrix[posX][posY];
+        return obstacleMatrix[posX][posY];
     }
 
     inline const std::vector<const Obstacle *> &Get(Vec2 pos) const {

@@ -210,9 +210,8 @@ inline UnitOrder ApplyAvoidRule(Unit& unit, const MoveRule& selected_rule) {
 
     unit.aim = CalcResultAim(selected_rule.keepAim, unit.aim, unit.weapon);
 
-    const auto velocity =
-            MaxSpeedVector(unit, selected_rule.moveDirection, CalcAimSpeedModifier(unit))
-                    .LimitLength(selected_rule.speedLimit);
+    const auto velocity = MaxSpeedVector(unit, selected_rule.moveDirection, CalcAimSpeedModifier(unit))
+            .LimitLength(selected_rule.speedLimit);
     UnitOrder order;
     order.targetDirection = unit.direction;
     order.targetVelocity = velocity;

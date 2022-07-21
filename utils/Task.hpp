@@ -30,16 +30,20 @@ struct Task {
     int unitId;
     std::vector<OrderType> actionTypes;
     std::any taskData;
+    std::any evalData;
     double score;
+    double penalty;
 
     explicit Task(int type, int unitId, std::string description, std::vector<OrderType> actionTypes) :
             type(type),
             description(std::move(description)),
             unitId(unitId),
             actionTypes(std::move(actionTypes)),
-            taskData() {}
+            taskData(),
+            penalty(0) {}
 
-    std::function<std::vector<OrderType>(POrder &)> func;
+    std::function<std::tuple<double, std::any>()> preEval;
+    std::function<std::vector<OrderType>(const std::any& evalData, POrder &)> func;
 
     bool operator<(const Task &other) const {
         return this->score < other.score;
@@ -65,10 +69,13 @@ struct POrder {
     }
 
     inline bool Accept(const Task &task) {
-        std::vector<OrderType> orderTypes = task.func(*this);
+        std::vector<OrderType> orderTypes = task.func(task.evalData, *this);
         for (auto &type: orderTypes) {
             picked[(int) type] = task.type;
-            DRAW({ this->description[(int) type] = to_string_p(task.score, 2) + "| " + task.description; });
+            DRAW({
+                     this->description[(int) type] =
+                             to_string_p(task.score, 2) + "|" + to_string_p(task.penalty, 2) + "| " + task.description;
+                 });
         }
         return !orderTypes.empty();
     }

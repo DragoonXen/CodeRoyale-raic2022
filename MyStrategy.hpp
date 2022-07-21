@@ -11,6 +11,7 @@
 #include <list>
 
 class MyStrategy {
+public:
     std::optional<model::Game> last_tick_game;
 
     std::optional<model::Vec2> point_move_to;
@@ -20,9 +21,9 @@ class MyStrategy {
     // radarState, starting angle, last finish tick
     std::unordered_map<int, std::tuple<int, double, int>> radarTaskData;
     std::unordered_map<int, std::list<double>> unknownDamage;
+    std::shared_ptr<std::vector<std::vector<std::pair<int, double>>>> dangerMatrix;
     static std::unordered_map<int, std::function<bool(const std::any&, const std::any&)>> taskFilter;
 
-public:
     MyStrategy(const model::Constants& constants);
     model::Order getOrder(const model::Game& game, DebugInterface* priority);
     void debugUpdate(DebugInterface& debugInterface);

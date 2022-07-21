@@ -15,6 +15,8 @@
 namespace {
     using namespace model;
 
+    using DestinationWithMaxSpeed = std::tuple<Vec2, double>;
+
     constexpr int kStepsSize = 24 / 2;
     const std::vector<double> kAngleDiff = []() {
         std::vector<double> result;
@@ -128,7 +130,7 @@ std::vector<OrderType> ApplyMoveTo(const Unit &unit,
     DRAW(DrawCross(newPosition, 0.5, debugging::Color(1., 0., 1., 0.5), debugInterface););
     if (unit.remainingSpawnTime.has_value()) {
         order.movePoint = newPosition;
-        order.maxMoveSpeed = maxSpeed;
+        order.maxMoveSpeed = std::min(maxSpeed, (newPosition - unit.position).sqrNorm());
         return {OrderType::kMove};
     }
     auto [obstacle, point] = ClosestIntersectionPoint(unit.position, newPosition, filter.closeObstacles);
@@ -145,11 +147,9 @@ std::vector<OrderType> ApplyMoveTo(const Unit &unit,
     return {OrderType::kMove};
 }
 
-std::vector<OrderType>
-ApplyMoveToUnitTask(const Unit &unit, const std::vector<Unit*>& myUnits, const Unit &target, std::unordered_map<int, VisibleFilter> &visibilityFilters,
-                    POrder &order) {
+std::any
+ApplyMoveToUnitTask(const Unit &unit, const std::vector<Unit *> &myUnits, const Unit &target, VisibleFilter &myFilter) {
     const Constants &constants = Constants::INSTANCE;
-    const auto &myFilter = visibilityFilters[unit.id];
     const double currentWeaponDistance = kWeaponDistance[*unit.weapon];
     const Vec2 direction = unit.position - target.position;
     const double startingAngle = direction.toRadians();
@@ -177,13 +177,13 @@ ApplyMoveToUnitTask(const Unit &unit, const std::vector<Unit*>& myUnits, const U
             if (IsVisible<VisionFilter::kShootFilter>(newPosition, -newDirection, 100., target.position, myFilter)) {
                 const double maxSpeed = currentWeaponDistance > distance ? std::numeric_limits<double>::infinity() :
                                         std::max(distance - currentWeaponDistance, 0.) + 1;
-                return ApplyMoveTo(unit, newPosition, myFilter, maxSpeed, order);
+                return DestinationWithMaxSpeed{newPosition, maxSpeed};
             }
         } else {
             if (IsVisible<VisionFilter::kVisibilityFilter>(newPosition, -newDirection, 100., target.position, myFilter)) {
                 const double maxSpeed = currentWeaponDistance > distance ? std::numeric_limits<double>::infinity() :
                                         std::max(distance - currentWeaponDistance, 0.) + 1;
-                return ApplyMoveTo(unit, newPosition, myFilter, maxSpeed, order);
+                return DestinationWithMaxSpeed{newPosition, maxSpeed};
             }
         }
     }
