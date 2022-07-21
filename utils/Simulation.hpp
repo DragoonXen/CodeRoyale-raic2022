@@ -107,9 +107,9 @@ Simulate(Unit unit, const Game &game, const ComplexMoveRule &moveRule, size_t de
         const double passedTime = tickTime * tick;
 
         DRAWK('I',
-              debugInterface->addCircle(unit.position, constants.unitRadius,
-                                        damage == 0 ? debugging::Color(1., .7, 0., .1) :
-                                        debugging::Color(1., 0., 0., .1));
+              debugInterface->addRing(unit.position, constants.unitRadius, 0.05,
+                                        damage == 0 ? debugging::Color(1., .7, 0., .8) :
+                                        debugging::Color(1., 0., 0., .8));
         );
         if (unit.remainingSpawnTime.has_value()) {
             if (passedTime + 1e-5 < *unit.remainingSpawnTime) {

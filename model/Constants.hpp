@@ -126,7 +126,7 @@ public:
     void writeTo(OutputStream& stream) const;
 
     inline static int toI(double val) {
-        return val + 0.5;
+        return (int) std::round(val);
     }
 
     void Update() {

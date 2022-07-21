@@ -101,7 +101,20 @@ namespace {
 
     double EvaluatePathDanger(Vec2 from, Vec2 to, std::vector<std::vector<std::pair<int, double>>> &dangerMatrix,
                               const model::Game &game) {
-        return EvaluateDanger(to, dangerMatrix, game);
+        double sumDanger = 0.;
+
+        const Vec2 vector = to - from;
+        const Vec2 dir = vector.toLen(1.);
+        const size_t kMinDistance = 0.;
+        constexpr double attenuationConstant = 0.986232704493359; // distance of 50 - 0.5 value
+        double currentCoeff = attenuationConstant;
+        size_t maxSteps = vector.norm() - kMinDistance;
+        for (size_t i = 1; i <= maxSteps; ++i) {
+            Vec2 nextPos = from + dir * (double) i;
+            sumDanger += EvaluateDanger(nextPos, dangerMatrix, game) * currentCoeff;
+            currentCoeff *= attenuationConstant;
+        }
+        return sumDanger;
     }
 }
 
@@ -116,7 +129,8 @@ MyStrategy::MyStrategy(const model::Constants &constants) {
     };
     TimeMeasure::end(0);
     {
-        std::vector<std::pair<int, double>> baseDanger(Constants::INSTANCE.obstacleMatrix[0].size());
+        std::vector<std::pair<int, double>> baseDanger(Constants::INSTANCE.obstacleMatrix[0].size(),
+                                                       std::make_pair(-1, 0.));
         dangerMatrix = std::make_shared<std::vector<std::vector<std::pair<int, double>>>>();
         std::cerr << dangerMatrix->size() << std::endl;
         dangerMatrix->resize(Constants::INSTANCE.obstacleMatrix.size(), baseDanger);
@@ -130,6 +144,7 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
     }
 #endif
     TimeMeasure::start();
+    auto &dangerMatrix = *this->dangerMatrix;
     const auto& constants = Constants::INSTANCE;
     DebugInterface::INSTANCE = debugInterface;
     Game game = game_base;
@@ -450,15 +465,18 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
         std::sort(weapons.begin(), weapons.end());
         std::sort(ammos.begin(), ammos.end());
         std::sort(shieldPotions.begin(), shieldPotions.end());
-        const auto pickTask = [&unit, &visibilityFilters, &tasks, &game, &evalPathDanger]
+        const auto pickTask = [&unit, &myUnits, &visibilityFilters, &tasks, &game, &evalPathDanger]
                 (const double distance, const Loot &loot, const double priority) {
             if ((loot.position - game.zone.currentCenter).sqrNorm() >= sqr(game.zone.currentRadius)) {
                 return false;
             }
-//            DRAW({
-//                     debugInterface->addPlacedText(loot.position, to_string_p(priority, 2), {0.5, 0.5}, 0.1,
-//                                                   debugging::Color(0., 0., 0., 1.));
-//                 });
+            DRAW({
+                     if (unit != myUnits[0]) {
+                         return;
+                     }
+                     debugInterface->addPlacedText(loot.position, to_string_p(priority, 2), {0.5, 0.5}, 0.1,
+                                                   debugging::Color(0., 0., 0., 1.));
+                 });
 
             if (distance <= Constants::INSTANCE.unitRadius && !unit->action.has_value() &&
                 !unit->remainingSpawnTime.has_value()) {
@@ -728,21 +746,6 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
             std::cerr << "[No function implemented]: " << task.type << ": " << task.description << std::endl;
         }
 #endif
-//        if (task.preEval != nullptr && !task.evalData.has_value()) {
-//            const auto &[priorityChange, data] = task.preEval();
-//            if (!data.has_value()) {
-//                continue;
-//            }
-//            auto newTask = task;
-//            newTask.evalData = data;
-//            newTask.penalty = priorityChange * 3700;
-//            newTask.score -= newTask.penalty;
-//            tasks.push(newTask);
-//            continue;
-//        }
-//        if (curr.Accept(task) && task.taskData.has_value()) {
-//            usedData.try_emplace(task.type).first->second.push_back(task.taskData);
-//        }
         if (task.preEval != nullptr && !task.evalData.has_value()) {
             const auto &[priorityChange, data] = task.preEval();
             if (!data.has_value()) {
@@ -750,7 +753,7 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
             }
             auto newTask = task;
             newTask.evalData = data;
-            newTask.penalty = priorityChange * 3700;
+            newTask.penalty = priorityChange * 20;
             newTask.score -= newTask.penalty;
             tasks.push(newTask);
             continue;
@@ -884,6 +887,38 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
             --i;
         }
     }
+
+    DRAW({
+             double minVal = std::numeric_limits<double>::infinity();
+             double maxVal = -std::numeric_limits<double>::infinity();
+             for (size_t i = 0; i != dangerMatrix.size(); ++i) {
+                 for (size_t j = 0; j != dangerMatrix[0].size(); ++j) {
+                     if (dangerMatrix[i][j].first != game.currentTick) {
+                         continue;
+                     }
+                     minVal = std::min(dangerMatrix[i][j].second, minVal);
+                     maxVal = std::max(dangerMatrix[i][j].second, maxVal);
+                 }
+             }
+             double diffVal = 1. / (maxVal - minVal);
+
+             debugInterface->setAutoFlush(false);
+             for (int i = 0; i != dangerMatrix.size(); ++i) {
+                 for (int j = 0; j != dangerMatrix[0].size(); ++j) {
+                     if (dangerMatrix[i][j].first != game.currentTick) {
+                         continue;
+                     }
+                     debugInterface->addRect({constants.minX + i - 0.5, constants.minY + j - 0.5}, {1., 1.},
+                                             debugging::Color((dangerMatrix[i][j].second - minVal) * diffVal, 0., 0.,
+                                                              .8));
+                     debugInterface->addPlacedText({constants.minX + i - 0.5, constants.minY + j + 0.5},
+                                                   to_string_p(dangerMatrix[i][j].second, 4), {0., 1.},
+                                                   0.05, debugging::Color(1., 1., 1., 0.9));
+                 }
+             }
+             debugInterface->flush();
+             debugInterface->setAutoFlush(true);
+         });
 
     this->last_tick_game = std::move(game);
 
