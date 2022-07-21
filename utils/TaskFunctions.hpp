@@ -35,14 +35,46 @@ namespace {
 }
 
 std::vector<OrderType>
-ApplyAttackTask(const Unit &unit, const std::vector<Unit*>& myUnits, const Unit &target, const int currentTick, std::unordered_map<int, VisibleFilter> &visibilityFilters,
+ApplyAttackTask(const Unit &unit,
+                const std::vector<Unit*>& myUnits,
+                const Unit &target,
+                const int currentTick,
+                std::unordered_map<int, VisibleFilter> &visibilityFilters,
+                std::unordered_map<int, std::list<TickSpeedDirUpdate>> unitMovementMem,
                 POrder &order) {
     const Constants& constants = Constants::INSTANCE;
-    double velocity = target.velocity.norm();
-    const double totalVelocity = velocity + std::max(0., velocity - 1.) + std::max(0., velocity - 2.);
-    const Vec2 aimTarget = target.position +
-                           (velocity > 1e-5 ? target.velocity.toLen(totalVelocity) * constants.tickTime :
-                            target.direction * 0.3);
+
+    auto& movementList = unitMovementMem[target.id];
+    const Vec2 aimTarget = [&unit, &movementList, &target]() -> Vec2 {
+        // move fast enough
+        if (movementList.back().first > 3. &&
+            std::abs(AngleDiff(movementList.back().second, target.direction.toRadians())) < M_PI / 10.) {
+            Unit copy = target;
+            MoveRule rule;
+            rule.moveDirection = target.position + Vec2(movementList.back().second) * 50;
+            rule.lookDirection = rule.moveDirection;
+            rule.keepAim = false;
+            rule.speedLimit = std::numeric_limits<double>::infinity();
+            const Constants &constants = Constants::INSTANCE;
+            double bulletSpeed = constants.weapons[*unit.weapon].projectileSpeed * constants.tickTime;
+            for (size_t tick = 1; tick <= 30; ++tick) {
+                ApplyAvoidRule(copy, rule);
+                DRAW({
+                         debugInterface->addRing(copy.position, 1., .01, debugging::Color(0., 0., 1., .8));
+                     });
+                double distance = (copy.position - unit.position).norm() - constants.unitRadius * 2;
+                if (bulletSpeed * tick >= distance) {
+                    return copy.position;
+                }
+            }
+        }
+        double velocity = target.velocity.norm();
+        const double totalVelocity = velocity + std::max(0., velocity - 1.) + std::max(0., velocity - 2.);
+        return target.position + (velocity > 1e-5 ?
+                                  target.velocity.toLen(totalVelocity) * constants.tickTime :
+                                  target.direction * 0.3);
+    }();
+
     DRAW(DrawCross(aimTarget, 0.3, debugging::Color(1., 0., 0., 0.5), debugInterface););
 
     const double angleDiff = AngleDiff(unit.direction.toRadians(), (aimTarget - unit.position).toRadians());

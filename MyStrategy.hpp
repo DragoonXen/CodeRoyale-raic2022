@@ -6,6 +6,7 @@
 #include "model/Order.hpp"
 #include "model/Constants.hpp"
 #include "utils/Simulation.hpp"
+#include "utils/TickStartUpdate.hpp"
 #include <functional>
 #include <any>
 #include <list>
@@ -21,6 +22,7 @@ public:
     // radarState, starting angle, last finish tick
     std::unordered_map<int, std::tuple<int, double, int>> radarTaskData;
     std::unordered_map<int, std::list<double>> unknownDamage;
+    std::unordered_map<int, std::list<TickSpeedDirUpdate>> unitMovementMem;
     std::shared_ptr<std::vector<std::vector<std::pair<int, double>>>> dangerMatrix;
     static std::unordered_map<int, std::function<bool(const std::any&, const std::any&)>> taskFilter;
 

@@ -6,6 +6,7 @@
 #define AI_CUP_22_TICKSTARTUPDATE_HPP
 
 #include <unordered_map>
+#include <list>
 #include "model/Projectile.hpp"
 #include "model/Game.hpp"
 #include "Util.hpp"
@@ -19,7 +20,7 @@ namespace {
     int kUnitExpiration = 30 * 10;
 }
 
-void UpdateLifetime(Projectile &projectile) {
+inline void UpdateLifetime(Projectile &projectile) {
     const Constants &constants = Constants::INSTANCE;
     double remaining_time = projectile.lifeTime;
     Vec2 position = projectile.position;
@@ -46,7 +47,7 @@ struct ProjectileUnitsProposals {
     int weaponType;
 };
 
-std::unordered_map<int, ProjectileUnitsProposals>
+inline std::unordered_map<int, ProjectileUnitsProposals>
 UpdateProjectiles(Game &game, std::optional<Game> &last_tick, const std::vector<Unit *> &units,
                   const std::vector<Unit> &allUnits,
                   const std::unordered_map<int, VisibleFilter> &filters) {
@@ -119,9 +120,9 @@ UpdateProjectiles(Game &game, std::optional<Game> &last_tick, const std::vector<
     return knownUnitsInfo;
 }
 
-void UpdateLoot(Game &game, std::optional<Game> &last_tick, const std::vector<Unit *> &units,
-                const std::vector<Unit> &allUnits,
-                const std::unordered_map<int, VisibleFilter> &filters) {
+inline void UpdateLoot(Game &game, std::optional<Game> &last_tick, const std::vector<Unit *> &units,
+                       const std::vector<Unit> &allUnits,
+                       const std::unordered_map<int, VisibleFilter> &filters) {
     std::unordered_map<int, Loot *> from_prev_tick;
      const Constants &constants = Constants::INSTANCE;
     if (last_tick) {
@@ -161,7 +162,7 @@ void UpdateLoot(Game &game, std::optional<Game> &last_tick, const std::vector<Un
     );
 }
 
-void UpdateUnitFromInfo(Unit& unit, ProjectileUnitsProposals& proposal) {
+inline void UpdateUnitFromInfo(Unit& unit, ProjectileUnitsProposals& proposal) {
     if (unit.lastSeenTick > proposal.tick) {
         return;
     }
@@ -182,10 +183,14 @@ void UpdateUnitFromInfo(Unit& unit, ProjectileUnitsProposals& proposal) {
     unit.lastSeenTick = proposal.tick;
 }
 
-void UpdateUnits(Game &game, std::optional<Game> &lastTick, const std::vector<Unit *> &units,
+using TickSpeedDirUpdate = std::pair<double, double>;
+
+
+inline void UpdateUnits(Game &game, std::optional<Game> &lastTick, const std::vector<Unit *> &units,
                  const std::vector<Unit> &allUnits,
                  const std::unordered_map<int, VisibleFilter> &filters,
-                 std::unordered_map<int, ProjectileUnitsProposals> projectilesUnitInfo) {
+                 std::unordered_map<int, ProjectileUnitsProposals> projectilesUnitInfo,
+                 std::unordered_map<int, std::list<TickSpeedDirUpdate>>& unitMovementMem) {
     DRAW(for (auto &[id, info]: projectilesUnitInfo) {
         debugInterface->addCircle(info.position, Constants::INSTANCE.unitRadius,
                                   debugging::Color(1., 0., 0., .3));
@@ -209,6 +214,28 @@ void UpdateUnits(Game &game, std::optional<Game> &lastTick, const std::vector<Un
 
     for (auto &unit: game.units) {
         if (from_prev_tick.count(unit.id)) {
+            //unitMovementMem[unit.id];
+            Unit* old_unit = from_prev_tick[unit.id];
+            constexpr size_t kMaxResultCount = 3;
+            // speed vector
+            Vec2 change = (unit.position - old_unit->position) * constants.ticksPerSecond;
+            auto [iter, _] = unitMovementMem.emplace(unit.id, 0);
+            auto& list = iter->second;
+            list.emplace_back(change.norm(), change.toRadians());
+            if (list.size() > kMaxResultCount) {
+                list.pop_front();
+            }
+//            if (std::abs(AngleDiff(list.back().second, unit.direction.toRadians())) < M_PI / 10.) {
+//                //void addRing(model::Vec2 position, double radius, double width, debugging::Color color);
+//                DRAW({
+//                         debugInterface->addRing(unit.position + unit.direction * list.back().first, 1., .1,
+//                                                 debugging::Color(0., 0., 1., .8));
+//                         debugInterface->addPlacedText(unit.position + unit.direction * list.back().first,
+//                                                       "u" + std::to_string(unit.id), {0.5, 0.5},
+//                                                       .1, debugging::Color(0., 0., 0., 1.));
+//                     });
+//            }
+
             from_prev_tick.erase(unit.id);
         }
         projectilesUnitInfo.erase(unit.id);

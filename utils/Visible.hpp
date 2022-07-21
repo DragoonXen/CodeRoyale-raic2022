@@ -21,7 +21,7 @@ struct VisibleFilter {
     std::vector<const Obstacle *> shootBlockingObstacles;
 };
 
-double FieldOfView(const Unit& unit) {
+inline double FieldOfView(const Unit& unit) {
     const double fieldOfView = Constants::INSTANCE.fieldOfView;
     if (unit.aim == 0.) {
         return fieldOfView;
@@ -29,7 +29,7 @@ double FieldOfView(const Unit& unit) {
     return fieldOfView - (fieldOfView - Constants::INSTANCE.weapons[*unit.weapon].aimFieldOfView) * unit.aim;
 }
 
-VisibleFilter FilterObstacles(Vec2 position, Vec2 direction, double fieldOfView) {
+inline VisibleFilter FilterObstacles(Vec2 position, Vec2 direction, double fieldOfView) {
     const auto &constants = Constants::INSTANCE;
     double maxShootDistance = 0.;
     for (size_t i = 0; i != constants.weapons.size(); ++i) {
@@ -75,7 +75,7 @@ enum VisionFilter {
     kVisibilityFilter
 };
 
-bool IsReachable(Vec2 position, Vec2 point, const VisibleFilter &visibleFilter) {
+inline bool IsReachable(Vec2 position, Vec2 point, const VisibleFilter &visibleFilter) {
     const auto &constants = Constants::INSTANCE;
     if (sqr(constants.viewDistance) < (point - position).sqrNorm()) {
         return false;
@@ -117,7 +117,7 @@ bool IsVisible(Vec2 position, Vec2 direction, double fieldOfView, Vec2 point,
     return true;
 }
 
-std::pair<const Obstacle *, Vec2>
+inline std::pair<const Obstacle *, Vec2>
 ClosestIntersectionPoint(Vec2 position, Vec2 point, const std::vector<const Obstacle *> &obstacleVector) {
     double minDistance = std::numeric_limits<double>::infinity();
     const Obstacle *closestObstacle = nullptr;

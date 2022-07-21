@@ -176,7 +176,7 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
         TimeMeasure::end(2);
         UpdateLoot(game, last_tick_game, myUnits, game.units, visibilityFilters);
         TimeMeasure::end(3);
-        UpdateUnits(game, last_tick_game, myUnits, game.units, visibilityFilters, std::move(projectilesUnitInfo));
+        UpdateUnits(game, last_tick_game, myUnits, game.units, visibilityFilters, std::move(projectilesUnitInfo), this->unitMovementMem);
     }
     TimeMeasure::end(4);
     myUnits = filterUnits(game.units, my_units_filter);
@@ -365,9 +365,9 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
                                 {OrderType::kAction, OrderType::kRotate}};
 
                 attackTask.score = moveTask.score;
-                attackTask.func = [unit, &myUnits, enUnit, tick = game.currentTick, &visibilityFilters](
-                        const std::any& evalData, POrder &order) -> std::vector<OrderType> {
-                    return ApplyAttackTask(*unit, myUnits, *enUnit, tick, visibilityFilters, order);
+                attackTask.func = [unit, &myUnits, enUnit, tick = game.currentTick, &visibilityFilters, &mem = this->unitMovementMem](
+                        const std::any &evalData, POrder &order) -> std::vector<OrderType> {
+                    return ApplyAttackTask(*unit, myUnits, *enUnit, tick, visibilityFilters, mem, order);
                 };
                 tasks.push(attackTask);
             };
@@ -888,37 +888,37 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
         }
     }
 
-    DRAW({
-             double minVal = std::numeric_limits<double>::infinity();
-             double maxVal = -std::numeric_limits<double>::infinity();
-             for (size_t i = 0; i != dangerMatrix.size(); ++i) {
-                 for (size_t j = 0; j != dangerMatrix[0].size(); ++j) {
-                     if (dangerMatrix[i][j].first != game.currentTick) {
-                         continue;
-                     }
-                     minVal = std::min(dangerMatrix[i][j].second, minVal);
-                     maxVal = std::max(dangerMatrix[i][j].second, maxVal);
-                 }
-             }
-             double diffVal = 1. / (maxVal - minVal);
-
-             debugInterface->setAutoFlush(false);
-             for (int i = 0; i != dangerMatrix.size(); ++i) {
-                 for (int j = 0; j != dangerMatrix[0].size(); ++j) {
-                     if (dangerMatrix[i][j].first != game.currentTick) {
-                         continue;
-                     }
-                     debugInterface->addRect({constants.minX + i - 0.5, constants.minY + j - 0.5}, {1., 1.},
-                                             debugging::Color((dangerMatrix[i][j].second - minVal) * diffVal, 0., 0.,
-                                                              .8));
-                     debugInterface->addPlacedText({constants.minX + i - 0.5, constants.minY + j + 0.5},
-                                                   to_string_p(dangerMatrix[i][j].second, 4), {0., 1.},
-                                                   0.05, debugging::Color(1., 1., 1., 0.9));
-                 }
-             }
-             debugInterface->flush();
-             debugInterface->setAutoFlush(true);
-         });
+//    DRAW({
+//             double minVal = std::numeric_limits<double>::infinity();
+//             double maxVal = -std::numeric_limits<double>::infinity();
+//             for (size_t i = 0; i != dangerMatrix.size(); ++i) {
+//                 for (size_t j = 0; j != dangerMatrix[0].size(); ++j) {
+//                     if (dangerMatrix[i][j].first != game.currentTick) {
+//                         continue;
+//                     }
+//                     minVal = std::min(dangerMatrix[i][j].second, minVal);
+//                     maxVal = std::max(dangerMatrix[i][j].second, maxVal);
+//                 }
+//             }
+//             double diffVal = 1. / (maxVal - minVal);
+//
+//             debugInterface->setAutoFlush(false);
+//             for (int i = 0; i != dangerMatrix.size(); ++i) {
+//                 for (int j = 0; j != dangerMatrix[0].size(); ++j) {
+//                     if (dangerMatrix[i][j].first != game.currentTick) {
+//                         continue;
+//                     }
+//                     debugInterface->addRect({constants.minX + i - 0.5, constants.minY + j - 0.5}, {1., 1.},
+//                                             debugging::Color((dangerMatrix[i][j].second - minVal) * diffVal, 0., 0.,
+//                                                              .8));
+//                     debugInterface->addPlacedText({constants.minX + i - 0.5, constants.minY + j + 0.5},
+//                                                   to_string_p(dangerMatrix[i][j].second, 4), {0., 1.},
+//                                                   0.05, debugging::Color(1., 1., 1., 0.9));
+//                 }
+//             }
+//             debugInterface->flush();
+//             debugInterface->setAutoFlush(true);
+//         });
 
     this->last_tick_game = std::move(game);
 
