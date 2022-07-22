@@ -125,7 +125,9 @@ MyStrategy::MyStrategy(const model::Constants &constants) {
     Constants::INSTANCE = constants;
     Constants::INSTANCE.Update();
     taskFilter[6] = [](const std::any &newTask, const std::any &applied) -> bool {
-        return std::any_cast<int>(newTask) == std::any_cast<int>(applied);
+        auto newPair = std::any_cast<std::pair<int, int>>(newTask);
+        auto appliedPair = std::any_cast<std::pair<int, int>>(applied);
+        return newPair.first == appliedPair.first && newPair.second != appliedPair.second;
     };
     TimeMeasure::end(0);
     {
@@ -330,6 +332,7 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
                 distances.emplace_back(distanceSqr, i);
             }
             std::sort(distances.begin(), distances.end());
+            const double damageUnitCouldCause = unit->ammo[*unit->weapon] * constants.weapons[*unit->weapon].projectileDamage;
             for (const auto &item: distances) {
                 const auto &enUnit = enemyUnits[item.second];
                 Task moveTask{1, unit->id,
@@ -343,6 +346,9 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
                 }
                 if (enUnit->shield + enUnit->health < constants.weapons[*unit->weapon].projectileDamage + 1e-5) {
                     moveTask.score *= 20.;
+                }
+                if (enUnit->health + enUnit->shield > damageUnitCouldCause) {
+                    moveTask.score /= 100.;
                 }
 //                if (!IsReachable(unit->position, enUnit->position, visibilityFilters[unit->id])) {
 //                    moveTask.score /= 10.;
@@ -485,7 +491,7 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
                               loot.position.toString(),
                               {OrderType::kAction}};
                 pickTask.score = priority;
-                pickTask.taskData = loot.id;
+                pickTask.taskData = std::make_pair(loot.id, unit->id);
                 pickTask.func = [unit, &loot](const std::any &evalData, POrder &order) -> std::vector<OrderType> {
                     return ApplyPickUp(*unit, loot, order);
                 };
@@ -500,7 +506,7 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
                               loot.position.toString(),
                               {OrderType::kMove}};
                 moveTask.score = priority / std::max(distance, 1.);
-                moveTask.taskData = loot.id;
+                moveTask.taskData = std::make_pair(loot.id, unit->id);
                 //const std::any &evalData,
                 moveTask.preEval = [unit, &loot, &evalPathDanger, inside]() -> std::tuple<double, std::any> {
                     return {evalPathDanger(unit->position, loot.position),
