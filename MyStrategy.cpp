@@ -342,7 +342,7 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
                     moveTask.score /= 10.;
                 }
                 if (enUnit->shield + enUnit->health < constants.weapons[*unit->weapon].projectileDamage + 1e-5) {
-                    moveTask.score *= 100.;
+                    moveTask.score *= 20.;
                 }
 //                if (!IsReachable(unit->position, enUnit->position, visibilityFilters[unit->id])) {
 //                    moveTask.score /= 10.;
