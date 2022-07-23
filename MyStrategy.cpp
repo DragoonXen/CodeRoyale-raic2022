@@ -659,6 +659,16 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
      */
     for (const Unit *unit: myUnits) {
         auto &[radarState, startingAngle, lastEndTick] = radarTaskData[unit->id];
+        if (unit->remainingSpawnTime.has_value() && *unit->remainingSpawnTime > 0.2) {
+            Task radarTask{10, unit->id, std::to_string(unit->id) + " radar mode", {OrderType::kRotate}};
+            radarTask.score = 1e3;
+            radarTask.func = [unit](const std::any &evalData, POrder &order) -> std::vector<OrderType> {
+                return ApplyLookTo(unit->position + unit->direction.clone().rotate90() * 30., order);
+            };
+            tasks.push(radarTask);
+            lastEndTick = game.currentTick;
+            continue;
+        }
         constexpr int kTicksToRepeatRadar = 90;
         if (radarState == 2 &&
             std::abs(AngleDiff(startingAngle, unit->direction.toRadians())) < unit->currentFieldOfView * .5) {
