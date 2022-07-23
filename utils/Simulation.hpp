@@ -237,7 +237,7 @@ ChooseBest(const Unit &unit, const Game &game, const std::vector<ComplexMoveRule
             // 10. скорость / 30 тиков = 1/3 максимальная скорость. Поставим 1/5 - умножим дистанцию на 5
             resultScore += -distance * 5 * Constants::INSTANCE.zoneDamagePerTick;
         }
-        resultScore += EvaluateDangerIncludeObstacles(resultUnit.position, dangerMatrix, game) * kDangerCoeff;
+        resultScore += EvaluateDangerIncludeObstacles(unit.id, resultUnit.position, dangerMatrix, game) * kDangerCoeff;
 
         if (resultScore < minScore) {
             minScore = resultScore;

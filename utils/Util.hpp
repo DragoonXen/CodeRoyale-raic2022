@@ -283,7 +283,7 @@ inline double EvaluateDanger(Vec2 pos, std::vector<std::vector<std::pair<int, do
 }
 
 inline double
-EvaluateDangerIncludeObstacles(Vec2 pos, std::vector<std::vector<std::pair<int, double>>> &dangerMatrix,
+EvaluateDangerIncludeObstacles(int unitId, Vec2 pos, std::vector<std::vector<std::pair<int, double>>> &dangerMatrix,
                                const Game &game) {
     constexpr double maxDistance = 1.5;
     constexpr double maxValue = 1.;
@@ -293,6 +293,16 @@ EvaluateDangerIncludeObstacles(Vec2 pos, std::vector<std::vector<std::pair<int, 
 
     for (auto obstacle: obstacles) {
         double distance = (obstacle->position - pos).norm() - obstacle->radius - Constants::INSTANCE.unitRadius;
+        if (distance >= maxDistance) {
+            continue;
+        }
+        danger += ((maxDistance - distance) / maxDistance) * maxValue;
+    }
+    for (auto& unit : game.units) {
+        if (unit.id == unitId) {
+            continue;
+        }
+        double distance = (unit.position - pos).norm() - Constants::INSTANCE.unitRadius * 2;
         if (distance >= maxDistance) {
             continue;
         }
