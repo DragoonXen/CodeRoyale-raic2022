@@ -224,6 +224,81 @@ inline double CalculateDanger(Vec2 position, const Unit& enemyUnit) {
     return danger;
 }
 
+inline double EvaluateDanger(Vec2 pos, std::vector<std::vector<std::pair<int, double>>>& dangerMatrix, const model::Game& game) {
+    const auto& constants = Constants::INSTANCE;
+    Vec2 targetPos(constants.toI(pos.x), constants.toI(pos.y));
+    const int posX = constants.toI(pos.x) - constants.minX;
+    const int posY = constants.toI(pos.y) - constants.minY;
+
+    auto& value = dangerMatrix[posX][posY];
+    if (value.first == game.currentTick) {
+        return value.second;
+    }
+    value.first = game.currentTick;
+
+    // angle, danger, playerId
+    std::vector<std::tuple<double, double, int >> unitsDanger;
+    double sumDanger = 0.;
+    for (auto& unit : game.units) {
+        if (unit.playerId == game.myId) {
+            continue;
+        }
+        auto positionDiff = unit.position - targetPos;
+        // TODO: think about obstacles. Worth to hide behind non shootable obstacle with reasonable precision
+        unitsDanger.emplace_back(positionDiff.toRadians(), CalculateDanger(targetPos, unit),
+                                 unit.playerId);
+        // distance of 5
+        if (positionDiff.sqrNorm() < sqr(7.)) {
+            sumDanger += std::get<1>(unitsDanger.back());
+        }
+    }
+    constexpr double kMinAngleDifference = M_PI / 3.6;  // 50 degrees
+    constexpr double kMinCoeff = 0.;
+    constexpr double kMaxAngleDifference = M_PI * (2. / 3.);  // 120 degrees
+    constexpr double kMaxCoeff = 1.;
+    constexpr double kDiffPerScore = (kMaxCoeff - kMinCoeff) / (kMaxAngleDifference - kMinAngleDifference);
+    for (size_t i = 0; i != unitsDanger.size(); ++i) {
+        auto& [angle, danger, playerId] = unitsDanger[i];
+        for (size_t j = i + 1; j != unitsDanger.size(); ++j) {
+            auto& [angle2, danger2, playerId2] = unitsDanger[j];
+            const double angleDiff = std::abs(AngleDiff(angle, angle2));
+            if (angleDiff <= kMinAngleDifference) {
+                sumDanger += kMinCoeff * std::min(danger, danger2);
+            } else if (angleDiff >= kMaxAngleDifference) {
+                sumDanger += kMaxCoeff * std::min(danger, danger2);
+            } else {
+                sumDanger += kDiffPerScore * (angleDiff - kMinAngleDifference) * std::min(danger, danger2);
+            }
+        }
+    }
+    value.second = sumDanger;
+    return value.second;
+}
+
+inline double
+EvaluateDangerIncludeObstacles(Vec2 pos, std::vector<std::vector<std::pair<int, double>>> &dangerMatrix,
+                               const Game &game) {
+    constexpr double maxDistance = 3.;
+    constexpr double maxValue = 1.;
+    auto danger = EvaluateDanger(pos, dangerMatrix, game);
+    const auto &obstacles = Constants::INSTANCE.GetL(pos);
+
+    for (auto obstacle: obstacles) {
+        double distance = (obstacle->position - pos).norm() - obstacle->radius - Constants::INSTANCE.unitRadius;
+        if (distance >= maxDistance) {
+            continue;
+        }
+        danger += ((maxDistance - distance) / maxDistance) * maxValue;
+    }
+    DRAW({
+             debugInterface->addRect(pos - Vec2(0.5, 0.5), {1., 1.}, debugging::Color(0., 0., 0., 0.5));
+             debugInterface->addPlacedText(pos,
+                                           to_string_p(danger, 4), {0.5, 0.5},
+                                           0.05, debugging::Color(1., 1., 1., 0.9));
+         });
+    return danger;
+}
+
 #ifdef DEBUG_INFO
 #define VERIFY(a, b) {if (!(a)){std::cerr << (b) << std::endl; getchar();exit(-1);}}
 #else

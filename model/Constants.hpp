@@ -113,6 +113,7 @@ public:
 
     static constexpr int collision_zone_offset = 30;
     std::vector<std::vector<std::vector<const Obstacle*>>> obstacleMatrix;
+    std::vector<std::vector<std::vector<const Obstacle*>>> longDistanceObstacleMatrix;
     int minX, minY;
 
     Constants() = default;
@@ -164,21 +165,26 @@ public:
         this->minY = toI(minY);
         std::vector<std::vector<const Obstacle *>> base((int) (maxY - minY));
         obstacleMatrix.resize((int) (maxX - minX), base);
-        constexpr double addition_radius = 2.;
-        const double addition =
-                std::max(unitRadius, /*weapons*/ weapons[2].projectileSpeed / ticksPerSecond) + addition_radius;
-        for (const auto &obstacle: obstacles) {
-            const int x = toI(obstacle.position.x) - minX;
-            const int y = toI(obstacle.position.y) - minY;
-            const int diff = obstacle.radius + addition;
-            const int toX = x + diff + 1;
-            const int toY = y + diff + 1;
-            for (int cx = x - diff; cx != toX; ++cx) {
-                for (int cy = y - diff; cy != toY; ++cy) {
-                    obstacleMatrix[cx][cy].push_back(&obstacle);
+        longDistanceObstacleMatrix = obstacleMatrix; // copy a lot of data
+        const auto applyObstacles = [&](std::vector<std::vector<std::vector<const Obstacle *>>> &matrix,
+                                        const double additionRadius) {
+            const double addition =
+                    std::max(unitRadius, /*weapons*/ weapons[2].projectileSpeed / ticksPerSecond) + additionRadius;
+            for (const auto &obstacle: obstacles) {
+                const int x = toI(obstacle.position.x) - minX;
+                const int y = toI(obstacle.position.y) - minY;
+                const int diff = (obstacle.radius + addition);
+                const int toX = x + diff + 1;
+                const int toY = y + diff + 1;
+                for (int cx = x - diff; cx != toX; ++cx) {
+                    for (int cy = y - diff; cy != toY; ++cy) {
+                        matrix[cx][cy].push_back(&obstacle);
+                    }
                 }
             }
-        }
+        };
+        applyObstacles(obstacleMatrix, 2.);
+        applyObstacles(longDistanceObstacleMatrix, 7.);
     }
 
     inline const std::vector<const Obstacle *> &Get(double x, double y) const {
@@ -189,6 +195,16 @@ public:
 
     inline const std::vector<const Obstacle *> &Get(Vec2 pos) const {
         return Get(pos.x, pos.y);
+    }
+
+    inline const std::vector<const Obstacle *> &GetL(double x, double y) const {
+        const int posX = toI(x) - minX;
+        const int posY = toI(y) - minY;
+        return longDistanceObstacleMatrix[posX][posY];
+    }
+
+    inline const std::vector<const Obstacle *> &GetL(Vec2 pos) const {
+        return GetL(pos.x, pos.y);
     }
 
     // Get string representation of Constants

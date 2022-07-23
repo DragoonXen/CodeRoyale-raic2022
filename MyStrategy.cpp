@@ -49,56 +49,6 @@ namespace {
              });
     }
 
-    inline double EvaluateDanger(Vec2 pos, std::vector<std::vector<std::pair<int, double>>>& dangerMatrix, const model::Game& game) {
-        const auto& constants = Constants::INSTANCE;
-        Vec2 targetPos(constants.toI(pos.x), constants.toI(pos.y));
-        const int posX = constants.toI(pos.x) - constants.minX;
-        const int posY = constants.toI(pos.y) - constants.minY;
-
-        auto& value = dangerMatrix[posX][posY];
-        if (value.first == game.currentTick) {
-            return value.second;
-        }
-        value.first = game.currentTick;
-
-        // angle, danger, playerId
-        std::vector<std::tuple<double, double, int >> unitsDanger;
-        double sumDanger = 0.;
-        for (auto& unit : game.units) {
-            if (unit.playerId == game.myId) {
-                continue;
-            }
-            auto positionDiff = unit.position - targetPos;
-            unitsDanger.emplace_back(positionDiff.toRadians(), CalculateDanger(targetPos, unit),
-                                     unit.playerId);
-            // distance of 5
-            if (positionDiff.sqrNorm() < sqr(7.)) {
-                sumDanger += std::get<1>(unitsDanger.back());
-            }
-        }
-        constexpr double kMinAngleDifference = M_PI / 3.6;  // 50 degrees
-        constexpr double kMinCoeff = 0.;
-        constexpr double kMaxAngleDifference = M_PI * (2. / 3.);  // 120 degrees
-        constexpr double kMaxCoeff = 1.;
-        constexpr double kDiffPerScore = (kMaxCoeff - kMinCoeff) / (kMaxAngleDifference - kMinAngleDifference);
-        for (size_t i = 0; i != unitsDanger.size(); ++i) {
-            auto& [angle, danger, playerId] = unitsDanger[i];
-            for (size_t j = i + 1; j != unitsDanger.size(); ++j) {
-                auto& [angle2, danger2, playerId2] = unitsDanger[j];
-                const double angleDiff = std::abs(AngleDiff(angle, angle2));
-                if (angleDiff <= kMinAngleDifference) {
-                    sumDanger += kMinCoeff * std::min(danger, danger2);
-                } else if (angleDiff >= kMaxAngleDifference) {
-                    sumDanger += kMaxCoeff * std::min(danger, danger2);
-                } else {
-                    sumDanger += kDiffPerScore * (angleDiff - kMinAngleDifference) * std::min(danger, danger2);
-                }
-            }
-        }
-        value.second = sumDanger;
-        return value.second;
-    }
-
     double EvaluatePathDanger(Vec2 from, Vec2 to, std::vector<std::vector<std::pair<int, double>>> &dangerMatrix,
                               const model::Game &game) {
         double sumDanger = 0.;
@@ -491,6 +441,9 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
                               loot.position.toString(),
                               {OrderType::kAction}};
                 pickTask.score = priority;
+                if (unit->aim < 1e-5) {
+                    pickTask.score *= 10.;
+                }
                 pickTask.taskData = std::make_pair(loot.id, unit->id);
                 pickTask.func = [unit, &loot](const std::any &evalData, POrder &order) -> std::vector<OrderType> {
                     return ApplyPickUp(*unit, loot, order);
@@ -574,13 +527,25 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
         }
 
         if (unit->shield + constants.shieldPerPotion <= constants.maxShield && unit->shieldPotions > 0) {
-            Task useShieldPotion{8, unit->id, std::to_string(unit->id) + " use shield potion ", {OrderType::kAction}};
+            Task useShieldPotion{8, unit->id, std::to_string(unit->id) + " use shield potion", {OrderType::kAction}};
             useShieldPotion.score = 800. * (constants.maxShield - unit->shield) / constants.shieldPerPotion;
             useShieldPotion.func = [](const std::any &evalData, POrder &order) -> std::vector<OrderType> {
                 order.action = std::make_shared<ActionOrder::UseShieldPotion>();
                 return {OrderType::kAction};
             };
             tasks.push(useShieldPotion);
+            const double currentDanger = EvaluateDanger(unit->position, dangerMatrix, game);
+            if (currentDanger > 0.2 && (unit->weapon.has_value() &&
+                unit->ammo[*unit->weapon] * constants.weapons[*unit->weapon].projectileDamage > 200. || currentDanger > 1.)) { // just survive
+                Task battleMovementWhileDrinking{12, unit->id, std::to_string(unit->id) + " battle movement",
+                                                 {OrderType::kMove}};
+                battleMovementWhileDrinking.score = useShieldPotion.score;
+                battleMovementWhileDrinking.func = [unit, &dangerMatrix, &game, &visibilityFilters](
+                        const std::any &evalData, POrder &order) -> std::vector<OrderType> {
+                    return ApplyBattleMovement(*unit, dangerMatrix, game, visibilityFilters[unit->id], order);
+                };
+                tasks.push(battleMovementWhileDrinking);
+            }
         }
 
         if (unit->shieldPotions < constants.maxShieldPotionsInInventory) {

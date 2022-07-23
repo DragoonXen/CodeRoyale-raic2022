@@ -222,4 +222,31 @@ ApplyMoveToUnitTask(const Unit &unit, const std::vector<Unit *> &myUnits, const 
     return {};
 }
 
+std::vector<OrderType>
+ApplyBattleMovement(const Unit &unit, std::vector<std::vector<std::pair<int, double>>> &dangerMatrix,
+                    const model::Game &game, const VisibleFilter &filter, POrder &order) {
+    constexpr int kSearchRange = 5;
+    constexpr int kSearchRangeSqr = kSearchRange * kSearchRange;
+    Vec2 basePosition(Constants::toI(unit.position.x), Constants::toI(unit.position.y));
+    Vec2 bestPosition = unit.position;
+    double minDanger = std::numeric_limits<double>::infinity();
+    for (int i = -kSearchRange; i <= kSearchRange; ++i) {
+        for (int j = -kSearchRange; j <= kSearchRange; ++j) {
+            if (i * i + j * j > kSearchRangeSqr) {
+                continue;
+            }
+            auto pos = basePosition + Vec2(i, j);
+            auto danger = EvaluateDangerIncludeObstacles(pos, dangerMatrix, game);
+            if (danger < minDanger) {
+                minDanger = danger;
+                bestPosition = pos;
+            }
+        }
+    }
+    if ((bestPosition - unit.position).sqrNorm() < 1e-7) {
+        bestPosition = unit.position + Vec2(0.1, 0.1);
+    }
+    return ApplyMoveTo(unit, bestPosition, filter, std::numeric_limits<double>::infinity(), order);
+}
+
 #endif //AI_CUP_22_TASKFUNCTIONS_H
