@@ -219,6 +219,8 @@ ChooseBest(const Unit &unit, const Game &game, const std::vector<ComplexMoveRule
         return true;
     };
 
+    Vec2 resultPosition;
+
     constexpr double kIncomingDamageIgnorance = 0.12;
     constexpr double kDistanceFromZone = 3.;
     constexpr double kDangerCoeff = 1.;
@@ -228,6 +230,9 @@ ChooseBest(const Unit &unit, const Game &game, const std::vector<ComplexMoveRule
     for (size_t id = 0; id != rules.size(); ++id) {
         const auto &rule = rules[id];
         const auto [resultUnit, incomeDamageScore, _2] = Simulate(unit, game, rule, kSimulationDeep);
+        if (id == 0) {
+            resultPosition = resultUnit.position;
+        }
         double resultScore = incomeDamageScore;
         if (checkShootAvailable(rule)) { // starting from this
             resultScore -= damageCouldCause * kIncomingDamageIgnorance;
@@ -238,6 +243,7 @@ ChooseBest(const Unit &unit, const Game &game, const std::vector<ComplexMoveRule
             resultScore += -distance * 5 * Constants::INSTANCE.zoneDamagePerTick;
         }
         resultScore += EvaluateDangerIncludeObstacles(unit.id, resultUnit.position, dangerMatrix, game) * kDangerCoeff;
+        resultScore += (resultUnit.position - resultPosition).norm() * 0.05; // further from destination penalty
 
         if (resultScore < minScore) {
             minScore = resultScore;
