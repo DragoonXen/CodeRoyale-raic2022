@@ -162,6 +162,13 @@ struct ZoneMover {
     inline bool IsTouchingZone(const Unit &unit) {
         return (unit.position - zone.currentCenter).norm() + Constants::INSTANCE.unitRadius > zone.currentRadius;
     }
+
+    inline double DistanceFromZone(const Unit &unit) {
+        if (zone.currentRadius < Constants::INSTANCE.unitRadius) {
+            return 0.;
+        }
+        return zone.currentRadius - ((unit.position - zone.currentCenter).norm() + Constants::INSTANCE.unitRadius);
+    }
 };
 
 inline bool ShootWhileSpawning(const Unit &fromUnit, const Unit &otherUnit, const double addDistance) {
@@ -280,7 +287,8 @@ EvaluateDangerIncludeObstacles(Vec2 pos, std::vector<std::vector<std::pair<int, 
                                const Game &game) {
     constexpr double maxDistance = 1.5;
     constexpr double maxValue = 1.;
-    auto danger = EvaluateDanger(pos, dangerMatrix, game);
+    const double baseDanger = EvaluateDanger(pos, dangerMatrix, game);
+    auto danger = baseDanger;
     const auto &obstacles = Constants::INSTANCE.GetL(pos);
 
     for (auto obstacle: obstacles) {
@@ -290,12 +298,12 @@ EvaluateDangerIncludeObstacles(Vec2 pos, std::vector<std::vector<std::pair<int, 
         }
         danger += ((maxDistance - distance) / maxDistance) * maxValue;
     }
-    DRAW({
-             debugInterface->addRect(pos - Vec2(0.5, 0.5), {1., 1.}, debugging::Color(0., 0., 0., 0.5));
-             debugInterface->addPlacedText(pos,
-                                           to_string_p(danger, 4), {0.5, 0.5},
-                                           0.05, debugging::Color(1., 1., 1., 0.9));
-         });
+//    DRAW({
+//             debugInterface->addRect(pos - Vec2(0.5, 0.5), {1., 1.}, debugging::Color(0., 0., 0., 0.5));
+//             debugInterface->addPlacedText(pos,
+//                                           to_string_p(baseDanger, 4) + " " + to_string_p(danger, 4), {0.5, 0.5},
+//                                           0.05, debugging::Color(1., 1., 1., 0.9));
+//         });
     return danger;
 }
 

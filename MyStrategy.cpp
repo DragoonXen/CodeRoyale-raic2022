@@ -781,6 +781,7 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
         }();
 
         std::vector<ComplexMoveRule> complexRules;
+        complexRules.emplace_back(orderedRule);
         for (const auto &rule: basicRules) {
             complexRules.emplace_back(
                     ComplexMoveRule({{orderedRule, 1},
@@ -802,8 +803,8 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
             }
         }
 
-        auto [score, ruleId] = ChooseBest(*unit, game, complexRules);
-        // какая же какаха, а
+        auto [score, ruleId] = ChooseBest(*unit, game, complexRules, dangerMatrix);
+
         const auto [resultUnit, dScore, _2] = Simulate(*unit, game, complexRules[ruleId], 1);
         incomingDamage[unit->id] = (unit->shield + unit->health) - (resultUnit.shield + resultUnit.health);
         auto order = ApplyAvoidRule(*unit, complexRules[ruleId].storage.front());

@@ -10,6 +10,7 @@
 #include "Movement.hpp"
 #include "DebugInterface.hpp"
 #include "model/UnitOrder.hpp"
+#include "Visualization.h"
 
 #ifndef AI_CUP_22_SIMULATION_HPP
 #define AI_CUP_22_SIMULATION_HPP
@@ -185,20 +186,66 @@ Simulate(Unit unit, const Game &game, const ComplexMoveRule &moveRule, size_t de
 }
 
 inline std::tuple<double, size_t>
-ChooseBest(const Unit &unit, const Game &game, const std::vector<ComplexMoveRule> &rules) {
+ChooseBest(const Unit &unit, const Game &game, const std::vector<ComplexMoveRule> &rules, std::vector<std::vector<std::pair<int, double>>>& dangerMatrix) {
     double minScore = std::numeric_limits<double>::infinity();
     size_t best_id = 0;
+    constexpr size_t kSimulationDeep = 20;
+    ZoneMover zoneMover{game.zone};
+    for (size_t i = 0; i != kSimulationDeep; ++i) {
+        zoneMover.nextTick();
+    }
+
+    double damageCouldCause = 0.;
+    const auto& baseRule = rules.front().storage.front();
+    if (baseRule.keepAim) {
+        const double weaponDamage = Constants::INSTANCE.weapons[*unit.weapon].projectileDamage;
+        int ticksToAim = (int) round((1. - unit.aim) / Constants::INSTANCE.weapons[*unit.weapon].aimPerTick);
+        ticksToAim = std::max(unit.nextShotTick - game.currentTick, ticksToAim);
+        int ticksBetweenShots =
+                Constants::INSTANCE.ticksPerSecond / Constants::INSTANCE.weapons[*unit.weapon].roundsPerSecond;
+        while (ticksToAim <= kSimulationDeep) {
+            damageCouldCause += weaponDamage;
+            ticksToAim += ticksBetweenShots;
+        }
+    }
+
+    const auto checkShootAvailable = [&baseRule](const ComplexMoveRule &complexMoveRule) {
+        for (const auto &rule: complexMoveRule.storage) {
+            if (!rule.keepAim || !rule.lookDirection.has_value() ||
+                (*baseRule.lookDirection - *rule.lookDirection).sqrNorm() > 1e-8) {
+                return false;
+            }
+        }
+        return true;
+    };
+
+    constexpr double kIncomingDamageIgnorance = 0.12;
+    constexpr double kDistanceFromZone = 3.;
+    constexpr double kDangerCoeff = 1.;
+
+    Vec2 bestResultPosition;
+
     for (size_t id = 0; id != rules.size(); ++id) {
         const auto &rule = rules[id];
-        const auto [_, score, _2] = Simulate(unit, game, rule);
-        if (score < minScore) {
-            if (score == 0.) {
-                return {0., id};
-            }
-            minScore = score;
+        const auto [resultUnit, incomeDamageScore, _2] = Simulate(unit, game, rule, kSimulationDeep);
+        double resultScore = incomeDamageScore;
+        if (checkShootAvailable(rule)) { // starting from this
+            resultScore -= damageCouldCause * kIncomingDamageIgnorance;
+        }
+        double distance = zoneMover.DistanceFromZone(resultUnit) - kDistanceFromZone;
+        if (distance < 0) {
+            // 10. скорость / 30 тиков = 1/3 максимальная скорость. Поставим 1/5 - умножим дистанцию на 5
+            resultScore += -distance * 5 * Constants::INSTANCE.zoneDamagePerTick;
+        }
+        resultScore += EvaluateDangerIncludeObstacles(resultUnit.position, dangerMatrix, game) * kDangerCoeff;
+
+        if (resultScore < minScore) {
+            minScore = resultScore;
+            bestResultPosition = resultUnit.position;
             best_id = id;
         }
     }
+    DRAW({ DrawCross(bestResultPosition, 0.5, debugging::Color(1., 0., 0., 0.6), debugInterface); });
     return {minScore, best_id};
 }
 
