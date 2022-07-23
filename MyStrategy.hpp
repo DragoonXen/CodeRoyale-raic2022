@@ -24,6 +24,7 @@ public:
     std::unordered_map<int, std::list<double>> unknownDamage;
     std::unordered_map<int, std::list<TickSpeedDirUpdate>> unitMovementMem;
     std::shared_ptr<std::vector<std::vector<std::pair<int, double>>>> dangerMatrix;
+    std::vector<std::vector<int>> lastSeenArray;
     static std::unordered_map<int, std::function<bool(const std::any&, const std::any&)>> taskFilter;
 
     MyStrategy(const model::Constants& constants);

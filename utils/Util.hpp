@@ -15,6 +15,8 @@ namespace {
     using namespace model;
 }
 
+constexpr int kLastSeenArrayStep = 30;
+
 template<typename T>
 T sqr(T value) { return value * value; }
 
@@ -315,6 +317,11 @@ EvaluateDangerIncludeObstacles(int unitId, Vec2 pos, std::vector<std::vector<std
 //                                           0.05, debugging::Color(1., 1., 1., 0.9));
 //         });
     return danger;
+}
+
+inline Vec2 GetLastSeenCoord(int posX, int posY) {
+    return Vec2(Constants::INSTANCE.minX + posX * kLastSeenArrayStep,
+                Constants::INSTANCE.minY + posY * kLastSeenArrayStep);
 }
 
 #ifdef DEBUG_INFO

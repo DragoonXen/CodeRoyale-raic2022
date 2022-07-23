@@ -79,14 +79,23 @@ MyStrategy::MyStrategy(const model::Constants &constants) {
         auto appliedPair = std::any_cast<std::pair<int, int>>(applied);
         return newPair.first == appliedPair.first && newPair.second != appliedPair.second;
     };
-    TimeMeasure::end(0);
+    taskFilter[101] = [](const std::any &newTask, const std::any &applied) -> bool {
+        auto newPos = std::any_cast<Vec2>(newTask);
+        auto prevPos = std::any_cast<Vec2>(applied);
+        return (newPos - prevPos).sqrNorm() < 45. * 45.;
+    };
     {
         std::vector<std::pair<int, double>> baseDanger(Constants::INSTANCE.obstacleMatrix[0].size(),
                                                        std::make_pair(-1, 0.));
         dangerMatrix = std::make_shared<std::vector<std::vector<std::pair<int, double>>>>();
-        std::cerr << dangerMatrix->size() << std::endl;
         dangerMatrix->resize(Constants::INSTANCE.obstacleMatrix.size(), baseDanger);
+        int sizeX = (dangerMatrix->size() + kLastSeenArrayStep - 1) / kLastSeenArrayStep + 1;
+        int sizeY = ((*dangerMatrix)[0].size() + kLastSeenArrayStep - 1) / kLastSeenArrayStep + 1;
+        std::vector<int> yDimVector(sizeY, -1);
+        lastSeenArray.resize(sizeX, yDimVector);
+        std::cerr << lastSeenArray.size() << ":" << lastSeenArray[0].size() << std::endl;
     }
+    TimeMeasure::end(0);
 }
 
 model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *debugInterface) {
@@ -97,7 +106,7 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
 #endif
     TimeMeasure::start();
     auto &dangerMatrix = *this->dangerMatrix;
-    const auto& constants = Constants::INSTANCE;
+    const auto &constants = Constants::INSTANCE;
     DebugInterface::INSTANCE = debugInterface;
     Game game = game_base;
 
@@ -107,7 +116,7 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
     auto myUnits = filterUnits(game.units, my_units_filter);
     std::unordered_map<int, double> unknownIncomingDamageSum;
     if (game_base.currentTick == 0) {
-        for (auto unit : myUnits) {
+        for (auto unit: myUnits) {
             unknownDamage[unit->id] = {};
             unknownIncomingDamageSum[unit->id] = 0.;
             radarTaskData[unit->id] = {0, 0., -10000};
@@ -115,10 +124,10 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
     }
 
     std::unordered_map<int, VisibleFilter> visibilityFilters;
-    for (auto& unit : game.units) {
+    for (auto &unit: game.units) {
         unit.currentFieldOfView = FieldOfView(unit);
     }
-    for (const auto unit : myUnits) {
+    for (const auto unit: myUnits) {
         visibilityFilters[unit->id] = FilterObstacles(unit->position, unit->direction, unit->currentFieldOfView);
     }
 
@@ -128,14 +137,16 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
         TimeMeasure::end(2);
         UpdateLoot(game, last_tick_game, myUnits, game.units, visibilityFilters);
         TimeMeasure::end(3);
+        UpdateVisited(lastSeenArray, myUnits, game.currentTick);
+        TimeMeasure::end(9);
         UpdateUnits(game, last_tick_game, myUnits, game.units, visibilityFilters, std::move(projectilesUnitInfo), this->unitMovementMem);
+        TimeMeasure::end(4);
     }
-    TimeMeasure::end(4);
     myUnits = filterUnits(game.units, my_units_filter);
     auto enemyUnits = filterUnits(game.units, enemies_filter);
 
     std::unordered_map<int, std::unordered_map<int, double>> unitDanger;
-    for (const auto& unit: myUnits) {
+    for (const auto &unit: myUnits) {
         unitDanger[unit->id] = std::unordered_map<int, double>();
         auto &myUnitMap = unitDanger[unit->id];
         for (const auto &enemyUnit: enemyUnits) {
@@ -177,7 +188,7 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
             const double actualIncomingDamage = (old_unit->shield + old_unit->health) - (unit->shield + unit->health);
             const double unknownIncomingDamage = std::max(actualIncomingDamage - incomingDamage[unit->id], 0.);
             constexpr size_t maxDamageCountingPeriod = 90;
-            auto& list = unknownDamage[unit->id];
+            auto &list = unknownDamage[unit->id];
             list.push_back(unknownIncomingDamage);
             if (list.size() > maxDamageCountingPeriod) {
                 list.pop_front();
@@ -251,30 +262,30 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
 //         });
 
     Vec2 centerPoint = {0., 0.};
-    for (auto& unit : myUnits) {
+    for (auto &unit: myUnits) {
         centerPoint += unit->position;
     }
     centerPoint *= (1. / myUnits.size());
 
     std::unordered_map<int, const Unit *> unitById;
     const std::vector<Unit> unitsBackup = game.units;
-    for (const auto& unit : unitsBackup) {
+    for (const auto &unit: unitsBackup) {
         unitById[unit.id] = &unit;
     }
-    std::unordered_map<int, const Loot*> lootById;
+    std::unordered_map<int, const Loot *> lootById;
     std::priority_queue<Task> tasks;
     const auto evalPathDanger = [&game, &dangerMatrix = this->dangerMatrix](Vec2 from, Vec2 to) {
         return EvaluatePathDanger(from, to, *dangerMatrix, game);
     };
     if (!enemyUnits.empty()) {
-        for (const Unit* unit: myUnits) {
+        for (const Unit *unit: myUnits) {
             if (!unit->weapon.has_value() || unit->ammo[*unit->weapon] == 0) {
                 continue;
             }
             std::vector<std::pair<double, int>> distances;
             distances.reserve(enemyUnits.size());
             for (size_t i = 0; i != enemyUnits.size(); ++i) {
-                const auto& enUnit = enemyUnits[i];
+                const auto &enUnit = enemyUnits[i];
                 const double distanceSqr = (unit->position - enUnit->position).sqrNorm();
                 if (ShootWhileSpawning(*unit, *enUnit, 0.)) {
                     continue;
@@ -282,7 +293,8 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
                 distances.emplace_back(distanceSqr, i);
             }
             std::sort(distances.begin(), distances.end());
-            const double damageUnitCouldCause = unit->ammo[*unit->weapon] * constants.weapons[*unit->weapon].projectileDamage;
+            const double damageUnitCouldCause =
+                    unit->ammo[*unit->weapon] * constants.weapons[*unit->weapon].projectileDamage;
             for (const auto &item: distances) {
                 const auto &enUnit = enemyUnits[item.second];
                 Task moveTask{1, unit->id,
@@ -294,7 +306,7 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
                                                            enUnit->position, visibilityFilters[unit->id])) {
                     moveTask.score /= 10.;
                 }
-                if (enUnit->shield + enUnit->health < constants.weapons[*unit->weapon].projectileDamage + 1e-5) {
+                if (item.first < 60. * 60. && enUnit->shield + enUnit->health < constants.weapons[*unit->weapon].projectileDamage + 1e-5) {
                     moveTask.score *= 20.;
                 }
                 if (enUnit->health + enUnit->shield > damageUnitCouldCause) {
@@ -332,7 +344,7 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
     /***
      * point_move_to / point_look_to
      */
-    for (const Unit* unit: myUnits) {
+    for (const Unit *unit: myUnits) {
         DRAWK('O', {
             if (point_move_to) {
                 debugInterface->addSegment(unit->position, *point_move_to, 0.1, debugging::Color(1., 0., 0., 1.));
@@ -357,12 +369,62 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
                           std::to_string(unit->id) + " Manual look to point " + point_look_to->toString(),
                           {OrderType::kRotate}};
             lookTask.score = 1e100;
-            lookTask.func = [lookTo = *point_look_to](const std::any& evalData, POrder &order) -> std::vector<OrderType> {
+            lookTask.func = [lookTo = *point_look_to](const std::any &evalData,
+                                                      POrder &order) -> std::vector<OrderType> {
                 return ApplyLookTo(lookTo, order);
             };
             tasks.push(lookTask);
         }
     }
+//    std::unordered_map<int, std::pair<double, Vec2>> bestExploreScore;
+//    for (const Unit *unit: myUnits) {
+//        bestExploreScore[unit->id] = std::make_pair(0., Vec2{});
+//    }
+    for (size_t x = 0; x != lastSeenArray.size(); ++x) {
+        for (size_t y = 0; y != lastSeenArray[0].size(); ++y) {
+            int val = lastSeenArray[x][y];
+            if (val == game.currentTick) {
+                continue;
+            }
+            Vec2 targetPos = GetLastSeenCoord(x, y);
+            if ((game.zone.currentCenter - targetPos).norm() + kLastSeenArrayStep > game.zone.currentRadius) {
+                continue;
+            }
+            const double basicScore = val == -1 ? 1. : (game.currentTick - val) / 100000.;
+
+            for (const Unit *unit: myUnits) {
+                Task moveTask{101, unit->id, std::to_string(unit->id) + " Smart explore zone " + targetPos.toString(),
+                              {OrderType::kMove}};
+                moveTask.score = basicScore * 28000. / (unit->position - targetPos).sqrNorm();
+//                moveTask.preEval = [unit, &targetPos, &evalPathDanger]() -> std::tuple<double, std::any> {
+//                    return {evalPathDanger(unit->position, targetPos),
+//                            DestinationWithMaxSpeed{targetPos, std::numeric_limits<double>::infinity()}};
+//                };
+//                auto& pair = bestExploreScore[unit->id];
+//                if (pair.first < moveTask.score) {
+//                    pair.first = moveTask.score;
+//                    pair.second = targetPos;
+//                }
+                moveTask.taskData = targetPos;
+                moveTask.func = [unit, targetPos, &visibilityFilters](
+                        const std::any &evalData, POrder &order) -> std::vector<OrderType> {
+//                    const auto &[position, maxSpeed] = std::any_cast<DestinationWithMaxSpeed>(evalData);
+                    return ApplyMoveTo(*unit, targetPos, visibilityFilters[unit->id],
+                                       std::numeric_limits<double>::infinity(),
+                                       order);
+                };
+
+                tasks.push(moveTask);
+            }
+        }
+    }
+//    {
+//        for (const Unit *unit: myUnits) {
+//            std::cerr << game.currentTick << "|" << unit->id << ":" << to_string_p(bestExploreScore[unit->id].first, 6)
+//                      << ";" << bestExploreScore[unit->id].second.toString() << " d "
+//                      << (bestExploreScore[unit->id].second - unit->position).norm() << std::endl;
+//        }
+//    }
     for (const Unit *unit: myUnits) {
         Task moveTask{4, unit->id, std::to_string(unit->id) + " Explore zone ", {OrderType::kMove}};
         moveTask.score = 0.;
@@ -900,6 +962,18 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
 //             }
 //             debugInterface->flush();
 //             debugInterface->setAutoFlush(true);
+//         });
+//    DRAWK('K', {
+//             for (size_t i = 0; i != lastSeenArray.size(); ++i) {
+//                 for (size_t j = 0; j != lastSeenArray[0].size(); ++j) {
+//                     auto pos = GetLastSeenCoord(i, j);
+//                     const int val = lastSeenArray[i][j];
+//                     double strength = val == -1 ? 1. : (game.currentTick - val) / 100000.;
+//                     debugInterface->addRect(pos - Vec2(kLastSeenArrayStep / 2., kLastSeenArrayStep / 2.),
+//                                             Vec2(kLastSeenArrayStep, kLastSeenArrayStep),
+//                                             debugging::Color(0., 0., 0., strength * .5));
+//                 }
+//             }
 //         });
 
     this->last_tick_game = std::move(game);

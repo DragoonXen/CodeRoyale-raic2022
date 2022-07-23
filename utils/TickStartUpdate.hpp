@@ -185,6 +185,24 @@ inline void UpdateUnitFromInfo(Unit& unit, ProjectileUnitsProposals& proposal) {
 
 using TickSpeedDirUpdate = std::pair<double, double>;
 
+inline void UpdateVisited(std::vector<std::vector<int>>& lastSeenArray, const std::vector<Unit *> &units, int currentTick) {
+    for (size_t i = 0; i != lastSeenArray.size(); ++i) {
+        for (size_t j = 0; j != lastSeenArray[0].size(); ++j) {
+            auto pos = GetLastSeenCoord(i, j);
+            for (auto unit: units) {
+                Vec2 dirVector = pos - unit->position;
+                if (dirVector.sqrNorm() > sqr(Constants::INSTANCE.viewDistance)) {
+                    continue;
+                }
+//                if (std::abs(AngleDiff(unit->direction.toRadians(), dirVector.toRadians())) <=
+//                    unit->currentFieldOfView * 0.5) {
+                lastSeenArray[i][j] = currentTick;
+                break;
+//                }
+            }
+        }
+    }
+}
 
 inline void UpdateUnits(Game &game, std::optional<Game> &lastTick, const std::vector<Unit *> &units,
                  const std::vector<Unit> &allUnits,
