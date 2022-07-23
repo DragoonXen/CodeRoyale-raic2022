@@ -130,6 +130,7 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
     for (const auto unit: myUnits) {
         visibilityFilters[unit->id] = FilterObstacles(unit->position, unit->direction, unit->currentFieldOfView);
     }
+    ZoneMover zoneMover(game.zone);
 
     {
         TimeMeasure::end(1);
@@ -315,8 +316,8 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
 //                if (!IsReachable(unit->position, enUnit->position, visibilityFilters[unit->id])) {
 //                    moveTask.score /= 10.;
 //                }
-                moveTask.preEval = [unit, enUnit, &visibilityFilter = visibilityFilters[unit->id], &myUnits, &evalPathDanger]() -> std::tuple<double, std::any> {
-                    return {0., ApplyMoveToUnitTask(*unit, myUnits, *enUnit, visibilityFilter)};
+                moveTask.preEval = [unit, enUnit, &visibilityFilter = visibilityFilters[unit->id], &myUnits, &zoneMover]() -> std::tuple<double, std::any> {
+                    return {0., ApplyMoveToUnitTask(*unit, myUnits, *enUnit, visibilityFilter, zoneMover)};
                 };
 
                 moveTask.func = [unit, &visibilityFilter = visibilityFilters[unit->id]](
@@ -483,11 +484,18 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
         std::sort(weapons.begin(), weapons.end());
         std::sort(ammos.begin(), ammos.end());
         std::sort(shieldPotions.begin(), shieldPotions.end());
-        const auto pickTask = [&unit, &myUnits, &visibilityFilters, &tasks, &game, &evalPathDanger]
+        const auto pickTask = [&unit, &visibilityFilters, &tasks, &myUnits, &evalPathDanger, &zoneMover]
                 (const double distance, const Loot &loot, const double priority) {
-            if ((loot.position - game.zone.currentCenter).sqrNorm() >= sqr(game.zone.currentRadius)) {
-                return false;
+            if (distance > Constants::INSTANCE.unitRadius &&
+                zoneMover.zone.currentRadius > Constants::INSTANCE.unitRadius * 2) {
+                auto ticksToMove = (size_t) round(distance / Constants::INSTANCE.maxUnitForwardSpeed * 1.15);
+                const double distanceTo =
+                        zoneMover.DistanceFromZone(loot.position, ticksToMove) - Constants::INSTANCE.unitRadius;
+                if (distanceTo < 0.) {
+                    return false;
+                }
             }
+
             DRAW({
                      if (unit != myUnits[0]) {
                          return;

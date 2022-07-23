@@ -161,6 +161,15 @@ struct ZoneMover {
         zone.currentRadius -= Constants::INSTANCE.zoneSpeedPerTick;
     }
 
+    inline double DistanceFromZone(const Vec2 position, size_t count) const {
+        size_t tickToReach = round((zone.currentRadius - zone.nextRadius) / Constants::INSTANCE.zoneSpeedPerTick);
+        size_t centerShiftTicks = std::min(tickToReach, count);
+        const Vec2 center = zone.currentCenter + (zone.nextCenter - zone.currentCenter) *
+                                                 ((double) centerShiftTicks / (double) tickToReach);
+        const double radius = zone.currentRadius - Constants::INSTANCE.zoneSpeedPerTick * count;
+        return radius - (position - center).norm();
+    }
+
     inline bool IsTouchingZone(const Unit &unit) {
         return (unit.position - zone.currentCenter).norm() + Constants::INSTANCE.unitRadius > zone.currentRadius;
     }

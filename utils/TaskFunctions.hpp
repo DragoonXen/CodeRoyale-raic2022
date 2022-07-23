@@ -180,7 +180,8 @@ std::vector<OrderType> ApplyMoveTo(const Unit &unit,
 }
 
 std::any
-ApplyMoveToUnitTask(const Unit &unit, const std::vector<Unit *> &myUnits, const Unit &target, VisibleFilter &myFilter) {
+ApplyMoveToUnitTask(const Unit &unit, const std::vector<Unit *> &myUnits, const Unit &target, VisibleFilter &myFilter,
+                    const ZoneMover &zone) {
     const Constants &constants = Constants::INSTANCE;
     const double currentWeaponDistance = kWeaponDistance[*unit.weapon];
     const Vec2 direction = unit.position - target.position;
@@ -205,6 +206,13 @@ ApplyMoveToUnitTask(const Unit &unit, const std::vector<Unit *> &myUnits, const 
         if (ignorePosition) {
             continue;
         }
+        auto ticksToMove = (size_t) round(
+                (unit.position - newPosition).sqrNorm() / Constants::INSTANCE.maxUnitForwardSpeed * 1.15);
+        const double distanceTo = zone.DistanceFromZone(newPosition, ticksToMove) - Constants::INSTANCE.unitRadius;
+        if (distanceTo < 5.) {
+            continue;
+        }
+
         if (unit.lastSeenTick == target.lastSeenTick) {
             if (IsVisible<VisionFilter::kShootFilter>(newPosition, -newDirection, 100., target.position, myFilter)) {
                 const double maxSpeed = currentWeaponDistance > distance ? std::numeric_limits<double>::infinity() :
