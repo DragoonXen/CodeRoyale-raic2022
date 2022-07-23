@@ -278,7 +278,7 @@ inline double EvaluateDanger(Vec2 pos, std::vector<std::vector<std::pair<int, do
 inline double
 EvaluateDangerIncludeObstacles(Vec2 pos, std::vector<std::vector<std::pair<int, double>>> &dangerMatrix,
                                const Game &game) {
-    constexpr double maxDistance = 3.;
+    constexpr double maxDistance = 1.5;
     constexpr double maxValue = 1.;
     auto danger = EvaluateDanger(pos, dangerMatrix, game);
     const auto &obstacles = Constants::INSTANCE.GetL(pos);
