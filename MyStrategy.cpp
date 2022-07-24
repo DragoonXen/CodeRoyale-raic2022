@@ -275,8 +275,9 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
     }
     std::unordered_map<int, const Loot *> lootById;
     std::priority_queue<Task> tasks;
-    const auto evalPathDanger = [&game, &dangerMatrix = this->dangerMatrix](Vec2 from, Vec2 to) {
-        return EvaluatePathDanger(from, to, *dangerMatrix, game);
+    const auto evalPathDanger = [&game, &dangerMatrix = this->dangerMatrix](const Unit &unit, Vec2 to) {
+        return EvaluatePathDanger(unit.position, to, *dangerMatrix, game) *
+               (unit.health + unit.shield <= 100.00001 ? 100. : 1.);
     };
     if (!enemyUnits.empty()) {
         for (const Unit *unit: myUnits) {
@@ -436,7 +437,7 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
             const Vec2 moveDirection = zone.currentCenter + Vec2(zoneDst.toRadians() + M_PI / 6).toLen(
                     std::max(0., zone.currentRadius - Constants::INSTANCE.viewDistance));
             // evaluate here
-            return {evalPathDanger(unit->position, moveDirection),
+            return {evalPathDanger(*unit, moveDirection),
                     DestinationWithMaxSpeed{moveDirection, std::numeric_limits<double>::infinity()}};
         };
 
@@ -459,7 +460,10 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
         };
         tasks.push(lookTask);
     }
-    // loot && potions usage
+    /** ==========================================================================
+     * loot
+     * ==========================================================================
+     */
     for (const Unit *unit: myUnits) {
         std::vector<std::pair<double, int>> ammos;
         std::vector<std::pair<double, int>> weapons;
@@ -531,7 +535,7 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
                 moveTask.taskData = std::make_pair(loot.id, unit->id);
                 //const std::any &evalData,
                 moveTask.preEval = [unit, &loot, &evalPathDanger, inside]() -> std::tuple<double, std::any> {
-                    return {evalPathDanger(unit->position, loot.position),
+                    return {evalPathDanger(*unit, loot.position),
                             DestinationWithMaxSpeed{loot.position,
                                                     inside ? 1. : std::numeric_limits<double>::infinity()}};
                 };
@@ -595,6 +599,22 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
             }
         }
 
+        if (unit->shieldPotions < constants.maxShieldPotionsInInventory) {
+            int diff = constants.maxShieldPotionsInInventory - unit->shieldPotions;
+            if (unit->action.has_value() && unit->action->actionType == ActionType::USE_SHIELD_POTION) {
+                ++diff;
+            }
+            for (auto &item: shieldPotions) {
+                const Loot &loot = game.loot[item.second];
+                pickTask((unit->position - loot.position).norm(), loot, 10 * std::min(loot.amount, diff) * sqr(diff));
+            }
+        }
+    }
+    /** ===========================================================================================
+     *
+     * ===========================================================================================
+     */
+    for (const Unit *unit: myUnits) {
         if (unit->shield + constants.shieldPerPotion <= constants.maxShield && unit->shieldPotions > 0) {
             Task useShieldPotion{8, unit->id, std::to_string(unit->id) + " use shield potion", {OrderType::kAction}};
             useShieldPotion.score = 800. * (constants.maxShield - unit->shield) / constants.shieldPerPotion;
@@ -605,8 +625,10 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
             tasks.push(useShieldPotion);
             const double currentDanger = EvaluateDanger(unit->position, dangerMatrix, game);
             if (currentDanger > 0.2 && (unit->weapon.has_value() &&
-                unit->ammo[*unit->weapon] * constants.weapons[*unit->weapon].projectileDamage > 200. || currentDanger > 1.)) { // just survive
-                Task battleMovementWhileDrinking{12, unit->id, std::to_string(unit->id) + " battle movement",
+                                        unit->ammo[*unit->weapon] * constants.weapons[*unit->weapon].projectileDamage >
+                                        200. || currentDanger > 1.)) { // just survive
+                Task battleMovementWhileDrinking{12, unit->id,
+                                                 std::to_string(unit->id) + " battle movement while drink",
                                                  {OrderType::kMove}};
                 battleMovementWhileDrinking.score = useShieldPotion.score;
                 battleMovementWhileDrinking.func = [unit, &dangerMatrix, &game, &visibilityFilters](
@@ -616,16 +638,16 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
                 tasks.push(battleMovementWhileDrinking);
             }
         }
-
-        if (unit->shieldPotions < constants.maxShieldPotionsInInventory) {
-            int diff = constants.maxShieldPotionsInInventory - unit->shieldPotions;
-            if (unit->action.has_value() && unit->action->actionType == ActionType::USE_SHIELD_POTION) {
-                ++diff;
-            }
-            for (auto &item: shieldPotions) {
-                const Loot &loot = game.loot[item.second];
-                pickTask((unit->position - loot.position).norm(), loot, 10 * std::min(loot.amount, diff) * sqr(diff));
-            }
+        if (unit->shield + unit->health <= 100.000001) {
+            Task battleMovementWhileDrinking{102, unit->id,
+                                             std::to_string(unit->id) + " danger battle movement",
+                                             {OrderType::kMove}};
+            battleMovementWhileDrinking.score = EvaluateDangerIncludeObstacles(unit->id, unit->position, dangerMatrix, game) * 50000.;
+            battleMovementWhileDrinking.func = [unit, &dangerMatrix, &game, &visibilityFilters](
+                    const std::any &evalData, POrder &order) -> std::vector<OrderType> {
+                return ApplyBattleMovement(*unit, dangerMatrix, game, visibilityFilters[unit->id], order);
+            };
+            tasks.push(battleMovementWhileDrinking);
         }
     }
     /** ==================================================================================
