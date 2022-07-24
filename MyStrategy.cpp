@@ -939,49 +939,49 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
         }
     }
 
-//    DRAW({
-//             double minVal = std::numeric_limits<double>::infinity();
-//             double maxVal = -std::numeric_limits<double>::infinity();
-//             for (size_t i = 0; i != dangerMatrix.size(); ++i) {
-//                 for (size_t j = 0; j != dangerMatrix[0].size(); ++j) {
-//                     if (dangerMatrix[i][j].first != game.currentTick) {
-//                         continue;
-//                     }
-//                     minVal = std::min(dangerMatrix[i][j].second, minVal);
-//                     maxVal = std::max(dangerMatrix[i][j].second, maxVal);
-//                 }
-//             }
-//             double diffVal = 1. / (maxVal - minVal);
-//
-//             debugInterface->setAutoFlush(false);
-//             for (int i = 0; i != dangerMatrix.size(); ++i) {
-//                 for (int j = 0; j != dangerMatrix[0].size(); ++j) {
-//                     if (dangerMatrix[i][j].first != game.currentTick) {
-//                         continue;
-//                     }
-//                     debugInterface->addRect({constants.minX + i - 0.5, constants.minY + j - 0.5}, {1., 1.},
-//                                             debugging::Color((dangerMatrix[i][j].second - minVal) * diffVal, 0., 0.,
-//                                                              .8));
-//                     debugInterface->addPlacedText({constants.minX + i - 0.5, constants.minY + j + 0.5},
-//                                                   to_string_p(dangerMatrix[i][j].second, 4), {0., 1.},
-//                                                   0.05, debugging::Color(1., 1., 1., 0.9));
-//                 }
-//             }
-//             debugInterface->flush();
-//             debugInterface->setAutoFlush(true);
-//         });
-//    DRAWK('K', {
-//             for (size_t i = 0; i != lastSeenArray.size(); ++i) {
-//                 for (size_t j = 0; j != lastSeenArray[0].size(); ++j) {
-//                     auto pos = GetLastSeenCoord(i, j);
-//                     const int val = lastSeenArray[i][j];
-//                     double strength = val == -1 ? 1. : (game.currentTick - val) / 100000.;
-//                     debugInterface->addRect(pos - Vec2(kLastSeenArrayStep / 2., kLastSeenArrayStep / 2.),
-//                                             Vec2(kLastSeenArrayStep, kLastSeenArrayStep),
-//                                             debugging::Color(0., 0., 0., strength * .5));
-//                 }
-//             }
-//         });
+    DRAW({
+             double minVal = std::numeric_limits<double>::infinity();
+             double maxVal = -std::numeric_limits<double>::infinity();
+             for (size_t i = 0; i != dangerMatrix.size(); ++i) {
+                 for (size_t j = 0; j != dangerMatrix[0].size(); ++j) {
+                     if (dangerMatrix[i][j].first != game.currentTick) {
+                         continue;
+                     }
+                     minVal = std::min(dangerMatrix[i][j].second, minVal);
+                     maxVal = std::max(dangerMatrix[i][j].second, maxVal);
+                 }
+             }
+             double diffVal = 1. / (maxVal - minVal);
+
+             debugInterface->setAutoFlush(false);
+             for (int i = 0; i != dangerMatrix.size(); ++i) {
+                 for (int j = 0; j != dangerMatrix[0].size(); ++j) {
+                     if (dangerMatrix[i][j].first != game.currentTick) {
+                         continue;
+                     }
+                     debugInterface->addRect({constants.minX + i - 0.5, constants.minY + j - 0.5}, {1., 1.},
+                                             debugging::Color((dangerMatrix[i][j].second - minVal) * diffVal, 0., 0.,
+                                                              .8));
+                     debugInterface->addPlacedText({constants.minX + i - 0.5, constants.minY + j + 0.5},
+                                                   to_string_p(dangerMatrix[i][j].second, 4), {0., 1.},
+                                                   0.05, debugging::Color(1., 1., 1., 0.9));
+                 }
+             }
+             debugInterface->flush();
+             debugInterface->setAutoFlush(true);
+         });
+    DRAWK('K', {
+             for (size_t i = 0; i != lastSeenArray.size(); ++i) {
+                 for (size_t j = 0; j != lastSeenArray[0].size(); ++j) {
+                     auto pos = GetLastSeenCoord(i, j);
+                     const int val = lastSeenArray[i][j];
+                     double strength = val == -1 ? 1. : (game.currentTick - val) / 100000.;
+                     debugInterface->addRect(pos - Vec2(kLastSeenArrayStep / 2., kLastSeenArrayStep / 2.),
+                                             Vec2(kLastSeenArrayStep, kLastSeenArrayStep),
+                                             debugging::Color(0., 0., 0., strength * .5));
+                 }
+             }
+         });
 
     this->last_tick_game = std::move(game);
 

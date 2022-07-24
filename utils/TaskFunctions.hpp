@@ -229,7 +229,7 @@ ApplyMoveToUnitTask(const Unit &unit, const std::vector<Unit *> &myUnits, const 
         size_t maxSteps = (target.position - newPosition).norm() - kMinDistance;
         const Vec2 dir = (target.position - newPosition).toLen(1.);
         for (size_t i = 1; i <= maxSteps; ++i) {
-            Vec2 nextPos = newPosition + dir * (double)i;
+            Vec2 nextPos = newPosition + dir * (double) i;
             const double value = EvaluateDanger(nextPos, dangerMatrix, game) - i * kAcceptableDangerPerStep;
             if (value < bestDanger) {
                 bestDanger = value;
@@ -239,7 +239,7 @@ ApplyMoveToUnitTask(const Unit &unit, const std::vector<Unit *> &myUnits, const 
 
         const double bestPosDistanceToTarget = (bestPos - target.position).norm();
         double maxSpeed = std::numeric_limits<double>::infinity();
-        if (bestDanger > 0.7 && bestPosDistanceToTarget < distanceToTarget) {
+        if (bestPosDistanceToTarget < distanceToTarget) {
             maxSpeed = distanceToTarget - bestPosDistanceToTarget + 1.;
         }
         return DestinationWithMaxSpeed{bestPos, maxSpeed};

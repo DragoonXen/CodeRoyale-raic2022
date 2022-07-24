@@ -88,7 +88,6 @@ Simulate(Unit unit, const Game &game, const ComplexMoveRule &moveRule, size_t de
             zoneMover.nextTick();
         }
         damagePenalty *= damageExp;
-        double damage = 0.;
         if (zoneMover.IsTouchingZone(unit)) {
             unit.health -= constants.zoneDamagePerTick;
             damagePenalty += constants.zoneDamagePerTick;
@@ -107,11 +106,6 @@ Simulate(Unit unit, const Game &game, const ComplexMoveRule &moveRule, size_t de
         const double tickTime = constants.tickTime;
         const double passedTime = tickTime * tick;
 
-        DRAWK('I',
-              debugInterface->addRing(unit.position, constants.unitRadius, 0.01,
-                                        damage == 0 ? debugging::Color(1., .7, 0., .8) :
-                                        debugging::Color(1., 0., 0., .8));
-        );
         if (unit.remainingSpawnTime.has_value()) {
             if (passedTime + 1e-5 < *unit.remainingSpawnTime) {
                 continue;
@@ -149,6 +143,7 @@ Simulate(Unit unit, const Game &game, const ComplexMoveRule &moveRule, size_t de
             }
             continue;
         }
+        double damage = 0.;
         for (size_t i = 0; i != remained_projectiles.size(); ++i) {
             const auto projectile = remained_projectiles[i];
             if (projectile->lifeTime <= passedTime) {
@@ -171,6 +166,11 @@ Simulate(Unit unit, const Game &game, const ComplexMoveRule &moveRule, size_t de
             }
             damage += constants.weapons[projectile->weaponTypeIndex].projectileDamage;
         }
+        DRAWK('I',
+              debugInterface->addRing(unit.position, constants.unitRadius, 0.01,
+                                      damage == 0 ? debugging::Color(1., .7, 0., .8) :
+                                      debugging::Color(1., 0., 0., .8));
+        );
         damagePenalty += std::min(damage, unit.health + unit.shield);
         ApplyDamage(unit, damage, game.currentTick);
         if (unit.health < 1e-3) {

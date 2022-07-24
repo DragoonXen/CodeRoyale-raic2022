@@ -284,6 +284,8 @@ inline void UpdateUnits(Game &game, std::optional<Game> &lastTick, const std::ve
         Unit unit;
         unit.id = id;
         unit.lastSeenTick = 0;
+        unit.health = 100.;
+        unit.shield = 100.;
         UpdateUnitFromInfo(unit, info);
         game.units.push_back(unit);
     }

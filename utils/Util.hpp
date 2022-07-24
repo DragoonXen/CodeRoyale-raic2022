@@ -225,15 +225,15 @@ inline double CalculateDanger(Vec2 position, const Unit& enemyUnit) {
     const auto diff = std::min(std::max(angleDiff - (M_PI / 6), 0.), M_PI * 2 / 3);
     danger *= 1. - diff / (M_PI * 5 / 6);
     // distance danger
-    constexpr double maxDangerDistance = 7.;
-    const double distance = distanceVec.norm();
-    const double dangerDistanceCheck = maxDangerDistance / std::max(distance, maxDangerDistance);
+    constexpr double maxDangerDistance = 7. * 7.;
+    const double distanceSqr = distanceVec.sqrNorm();
+    const double dangerDistanceCheck = maxDangerDistance / std::max(distanceSqr, maxDangerDistance);
     danger *= dangerDistanceCheck;
     // weapon danger
     if (enemyUnit.weapon && enemyUnit.ammo[*enemyUnit.weapon] > 0) {
         constexpr double kWeaponDanger[] = {0.34, .6666, 1.};
         danger *= kWeaponDanger[*enemyUnit.weapon];
-        if (*enemyUnit.weapon == 1 && distance < 7.) {
+        if (*enemyUnit.weapon == 1 && distanceSqr < sqr(11.)) {
             danger *= 1.55;
         }
     } else {
@@ -266,7 +266,7 @@ inline double EvaluateDanger(Vec2 pos, std::vector<std::vector<std::pair<int, do
         unitsDanger.emplace_back(positionDiff.toRadians(), CalculateDanger(targetPos, unit),
                                  unit.playerId);
         // distance of 5
-        if (positionDiff.sqrNorm() < sqr(7.)) {
+        if (positionDiff.sqrNorm() < sqr(11.)) {
             sumDanger += std::get<1>(unitsDanger.back());
         }
     }
