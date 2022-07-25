@@ -465,6 +465,9 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
      * ==========================================================================
      */
     for (const Unit *unit: myUnits) {
+        if (unit->remainingSpawnTime.value_or(0.) > 2.) {
+            continue;
+        }
         std::vector<std::pair<double, int>> ammos;
         std::vector<std::pair<double, int>> weapons;
         std::vector<std::pair<double, int>> shieldPotions;
