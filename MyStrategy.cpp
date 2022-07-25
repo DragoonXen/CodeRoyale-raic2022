@@ -125,7 +125,7 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
             second = player.score;
         }
     }
-    if (second  + 1000. < first) {
+    if (second  + 500. < first) {
         enemyId = enemyPlayer;
     }
 
@@ -220,20 +220,20 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
             unknownIncomingDamageSum[unit->id] = sumDamage;
 
 #ifdef DEBUG_INFO
-            if ((old_unit->position - unit->position).norm() > 1e-8) {
-                std::cerr << game.currentTick << " pos expected " << old_unit->position.toString() << " actual "
-                          << unit->position.toString() << " diff " << (old_unit->position - unit->position).norm()
-                          << std::endl;
-                std::cerr << game.currentTick << " vel expected " << old_unit->velocity.toString() << "|"
-                          << old_unit->velocity.norm() << " actual "
-                          << unit->velocity.toString() << "|"
-                          << unit->velocity.norm() << " actual " << " diff "
-                          << (old_unit->velocity - unit->velocity).norm() << " angle diff "
-                          << old_unit->velocity.toRadians() - unit->velocity.toRadians()
-                          << std::endl;
-                std::cerr << game.currentTick << " aim expected " << std::to_string(old_unit->aim) << " actual "
-                          << std::to_string(unit->aim) << std::endl;
-            }
+//            if ((old_unit->position - unit->position).norm() > 1e-8) {
+//                std::cerr << game.currentTick << " pos expected " << old_unit->position.toString() << " actual "
+//                          << unit->position.toString() << " diff " << (old_unit->position - unit->position).norm()
+//                          << std::endl;
+//                std::cerr << game.currentTick << " vel expected " << old_unit->velocity.toString() << "|"
+//                          << old_unit->velocity.norm() << " actual "
+//                          << unit->velocity.toString() << "|"
+//                          << unit->velocity.norm() << " actual " << " diff "
+//                          << (old_unit->velocity - unit->velocity).norm() << " angle diff "
+//                          << old_unit->velocity.toRadians() - unit->velocity.toRadians()
+//                          << std::endl;
+//                std::cerr << game.currentTick << " aim expected " << std::to_string(old_unit->aim) << " actual "
+//                          << std::to_string(unit->aim) << std::endl;
+//            }
 #endif
         }
     }
