@@ -303,7 +303,7 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
                               std::to_string(unit->id) + " move to attack enemy " + std::to_string(enUnit->id),
                               {OrderType::kMove}};
                 constexpr double kMaxDangerDistanceSqr = 64.;
-                moveTask.score = kMaxDangerDistanceSqr * 1000. / std::max(kMaxDangerDistanceSqr, item.first);
+                moveTask.score = kMaxDangerDistanceSqr * 1000. / std::max(4., item.first);
                 if (!IsVisible<VisionFilter::kShootFilter>(unit->position, unit->direction, unit->currentFieldOfView,
                                                            enUnit->position, visibilityFilters[unit->id])) {
                     moveTask.score /= 10.;
