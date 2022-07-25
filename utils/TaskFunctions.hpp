@@ -261,6 +261,9 @@ ApplyBattleMovement(const Unit &unit, std::vector<std::vector<std::pair<int, dou
                 continue;
             }
             auto pos = basePosition + Vec2(i, j);
+            if (!IsReachableByUnit(pos, unit.id, unit.position, filter, game)) {
+                continue;
+            }
             auto danger = EvaluateDangerIncludeObstacles(unit.id, pos, dangerMatrix, game);
             if (danger < minDanger) {
                 minDanger = danger;

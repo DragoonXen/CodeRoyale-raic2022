@@ -75,6 +75,27 @@ enum VisionFilter {
     kVisibilityFilter
 };
 
+inline bool IsReachableByUnit(Vec2 from, int unitId, Vec2 destination, const VisibleFilter &visibleFilter,
+                              const Game &game) {
+    const auto &constants = Constants::INSTANCE;
+    for (const auto &obstacle: visibleFilter.closeObstacles) {
+        if (SegmentPointSqrDist(obstacle->position, from, destination) + 1e-8 <
+            sqr(obstacle->radius + constants.unitRadius)) {
+            return false;
+        }
+    }
+    for (const auto &unit: game.units) {
+        if (unit.id == unitId) {
+            continue;
+        }
+        if (SegmentPointSqrDist(unit.position, from, destination) + 1e-8 <
+            sqr(constants.unitRadius * 2)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 inline bool IsReachable(Vec2 position, Vec2 point, const VisibleFilter &visibleFilter) {
     const auto &constants = Constants::INSTANCE;
     if (sqr(constants.viewDistance) < (point - position).sqrNorm()) {
