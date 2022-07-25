@@ -17,6 +17,17 @@ namespace {
 
 constexpr int kLastSeenArrayStep = 30;
 
+inline double RotationSpeed(double aim, const std::optional<int>& weapon) {
+    const Constants &constants = Constants::INSTANCE;
+    return aim > 0 ? constants.rotationSpeed -
+                     (constants.rotationSpeed - constants.weapons[*weapon].aimRotationSpeed) * aim
+                   : constants.rotationSpeed;
+}
+
+inline double RotationSpeed(const Unit& unit) {
+    return RotationSpeed(unit.aim, unit.weapon);
+}
+
 template<typename T>
 T sqr(T value) { return value * value; }
 
@@ -331,6 +342,36 @@ EvaluateDangerIncludeObstacles(int unitId, Vec2 pos, std::vector<std::vector<std
 inline Vec2 GetLastSeenCoord(int posX, int posY) {
     return Vec2(Constants::INSTANCE.minX + posX * kLastSeenArrayStep,
                 Constants::INSTANCE.minY + posY * kLastSeenArrayStep);
+}
+
+inline int TicksToShotAvailable(const Unit& unit, Vec2 position, int currentTick) {
+    // at first - just timer
+    int result = std::max(unit.nextShotTick - currentTick, 0);
+    const double rotationSpeed = RotationSpeed(unit);
+    const double angleDiff = std::abs(AngleDiff(unit.direction.toRadians(), (position - unit.position).toRadians()));
+    result = std::max(result, (int) round(angleDiff / rotationSpeed + 0.4));
+    int ticksToAim = (int) round((1. - unit.aim) / Constants::INSTANCE.weapons[*unit.weapon].aimPerTick);
+    if (unit.action.has_value()) {
+        ticksToAim += unit.action->finishTick - currentTick;
+    }
+    return std::max(result, ticksToAim);
+}
+
+inline double DamageCouldCause(const Unit& unit) {
+    return unit.ammo[*unit.weapon] * Constants::INSTANCE.weapons[*unit.weapon].projectileDamage;
+}
+
+inline int TicksToKillUnit(const Unit& unit, const Unit& target, int currentTick) {
+    if (!unit.weapon.has_value() || DamageCouldCause(unit) < target.shield + target.health) {
+        return 999999;
+    }
+    int ticksKill = TicksToShotAvailable(unit, target.position, currentTick);
+    double targetHealth = target.shield + target.health;
+    while (targetHealth > 0.) {
+        targetHealth -= Constants::INSTANCE.weapons[*unit.weapon].projectileDamage;
+        ticksKill += Constants::INSTANCE.weapons[*unit.weapon].ticksBetweenRounds;
+    }
+    return ticksKill;
 }
 
 #ifdef DEBUG_INFO

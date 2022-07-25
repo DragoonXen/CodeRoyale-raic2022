@@ -109,6 +109,25 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
     const auto &constants = Constants::INSTANCE;
     DebugInterface::INSTANCE = debugInterface;
     Game game = game_base;
+    std::optional<int> enemyId = std::nullopt;
+    double first = 0.;
+    int enemyPlayer = 0;
+    double second = 0.;
+    for (auto& player : game_base.players) {
+        if (player.id == game.myId) {
+            continue;
+        }
+        if (player.score > first) {
+            second = first;
+            enemyPlayer = player.id;
+            first = player.score;
+        } else if (player.score > second) {
+            second = player.score;
+        }
+    }
+    if (second  + 1000. < first) {
+        enemyId = enemyPlayer;
+    }
 
     const auto my_units_filter = [id = game.myId](const auto &unit) { return unit.playerId == id; };
     const auto enemies_filter = [id = game.myId](const auto &unit) { return unit.playerId != id; };
@@ -280,6 +299,36 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
                (unit.health + unit.shield <= 100.00001 ? 100. : 1.);
     };
     if (!enemyUnits.empty()) {
+        std::unordered_map<int, int> opponentUnits;
+        for (const Unit *unit: myUnits) {
+            auto &currentUnitDangers = unitDanger[unit->id];
+            int count = 0;
+            for (auto &danger: currentUnitDangers) {
+                if (danger.second > 0.1) {
+                    ++count;
+                }
+            }
+            if (count > 1) {
+                continue;
+            }
+            std::optional<int> id = std::nullopt;
+            for (auto &danger: currentUnitDangers) {
+                if (danger.second > 0.2) {
+                    id = danger.first;
+                    break;
+                }
+            }
+            if (!id.has_value()) {
+                continue;
+            }
+
+            int ticksToKillHim = TicksToKillUnit(*unit, *unitById[*id], game.currentTick);
+            int ticksToKillMe = TicksToKillUnit(*unitById[*id], *unit, game.currentTick);
+            if (ticksToKillHim + 10 < ticksToKillMe) {
+                opponentUnits[unit->id] = *id;
+            }
+        }
+
         for (const Unit *unit: myUnits) {
             if (!unit->weapon.has_value() || unit->ammo[*unit->weapon] == 0) {
                 continue;
@@ -294,9 +343,11 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
                 }
                 distances.emplace_back(distanceSqr, i);
             }
+
+            auto opponentIter = opponentUnits.find(unit->id);
+
             std::sort(distances.begin(), distances.end());
-            const double damageUnitCouldCause =
-                    unit->ammo[*unit->weapon] * constants.weapons[*unit->weapon].projectileDamage;
+            const double damageUnitCouldCause = DamageCouldCause(*unit);
             for (const auto &item: distances) {
                 const auto &enUnit = enemyUnits[item.second];
                 Task moveTask{1, unit->id,
@@ -308,6 +359,11 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
                                                            enUnit->position, visibilityFilters[unit->id])) {
                     moveTask.score /= 10.;
                 }
+                bool isCurrOpponent = (opponentIter != opponentUnits.end() && opponentIter->second == enUnit->id);
+                if (isCurrOpponent) {
+                    moveTask.score *= 50.;
+                }
+
                 if (item.first < 60. * 60. && enUnit->shield + enUnit->health < constants.weapons[*unit->weapon].projectileDamage + 1e-5) {
                     moveTask.score *= 20.;
                 }
@@ -502,13 +558,13 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
                 }
             }
 
-            DRAW({
-                     if (unit != myUnits[0]) {
-                         return;
-                     }
-                     debugInterface->addPlacedText(loot.position, to_string_p(priority, 2), {0.5, 0.5}, 0.1,
-                                                   debugging::Color(0., 0., 0., 1.));
-                 });
+            DRAWK('L', {
+                if (unit != myUnits[0]) {
+                    return;
+                }
+                debugInterface->addPlacedText(loot.position, to_string_p(priority, 2), {0.5, 0.5}, 0.1,
+                                              debugging::Color(0., 0., 0., 1.));
+            });
 
             if (distance <= Constants::INSTANCE.unitRadius && !unit->action.has_value() &&
                 !unit->remainingSpawnTime.has_value()) {
@@ -964,7 +1020,7 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
         }
     }
 
-    DRAW({
+    DRAWK('D', {
              double minVal = std::numeric_limits<double>::infinity();
              double maxVal = -std::numeric_limits<double>::infinity();
              for (size_t i = 0; i != dangerMatrix.size(); ++i) {

@@ -145,6 +145,7 @@ public:
             weapon.aimRotationSpeed *= M_PI / 180. / ticksPerSecond;
             weapon.aimFieldOfView *= M_PI / 180.;
             weapon.aimPerTick = tickTime / weapon.aimTime;
+            weapon.ticksBetweenRounds = (int) round(this->ticksPerSecond / weapon.roundsPerSecond);
         }
 
         double minX, minY;

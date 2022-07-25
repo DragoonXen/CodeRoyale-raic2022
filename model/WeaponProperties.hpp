@@ -15,6 +15,7 @@ public:
     std::string name;
     // Shooting speed (number of shots per second)
     double roundsPerSecond;
+    int ticksBetweenRounds;
     // Accuracy (spread angle) of a shot (in degrees)
     double spread;
     // Aiming time

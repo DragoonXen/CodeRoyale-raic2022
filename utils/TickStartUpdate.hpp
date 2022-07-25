@@ -146,13 +146,13 @@ inline void UpdateLoot(Game &game, std::optional<Game> &last_tick, const std::ve
                 continue;
             }
             if (!IsVisible<kVisibilityFilter>(loot.position, units, allUnits, filters)) {
-                DRAW(debugInterface->addCircle(loot.position, .7, debugging::Color(0., 1., 0., .3)););
+                DRAWK('L', debugInterface->addCircle(loot.position, .7, debugging::Color(0., 1., 0., .3)););
                 game.loot.push_back(loot);
             }
         }
     }
 
-    DRAW(
+    DRAWK('L',
             for (auto &curr_loot: game.loot) {
                 debugInterface->addPlacedText(curr_loot.position + model::Vec2{0.5, 0.5},
                                               "l " + std::to_string(curr_loot.id),
