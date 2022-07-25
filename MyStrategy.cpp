@@ -110,23 +110,25 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
     DebugInterface::INSTANCE = debugInterface;
     Game game = game_base;
     std::optional<int> enemyId = std::nullopt;
-    double first = 0.;
-    int enemyPlayer = 0;
-    double second = 0.;
-    for (auto& player : game_base.players) {
-        if (player.id == game.myId) {
-            continue;
+    {
+        double first = 0.;
+        int enemyPlayer = 0;
+        double second = 0.;
+        for (auto &player: game_base.players) {
+            if (player.id == game.myId) {
+                continue;
+            }
+            if (player.score > first) {
+                second = first;
+                enemyPlayer = player.id;
+                first = player.score;
+            } else if (player.score > second) {
+                second = player.score;
+            }
         }
-        if (player.score > first) {
-            second = first;
-            enemyPlayer = player.id;
-            first = player.score;
-        } else if (player.score > second) {
-            second = player.score;
+        if (second + 500. < first) {
+            enemyId = enemyPlayer;
         }
-    }
-    if (second  + 500. < first) {
-        enemyId = enemyPlayer;
     }
 
     const auto my_units_filter = [id = game.myId](const auto &unit) { return unit.playerId == id; };
@@ -362,6 +364,7 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
                 bool isCurrOpponent = (opponentIter != opponentUnits.end() && opponentIter->second == enUnit->id);
                 if (isCurrOpponent) {
                     moveTask.score *= 50.;
+                    isCurrOpponent &= enemyId.has_value() && *enemyId == enUnit->playerId;
                 }
 
                 if (item.first < 60. * 60. && enUnit->shield + enUnit->health < constants.weapons[*unit->weapon].projectileDamage + 1e-5) {
