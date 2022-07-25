@@ -182,9 +182,9 @@ std::vector<OrderType> ApplyMoveTo(const Unit &unit,
 std::any
 ApplyMoveToUnitTask(const Unit &unit, const std::vector<Unit *> &myUnits, const Unit &target, VisibleFilter &myFilter,
                     const ZoneMover &zone, std::vector<std::vector<std::pair<int, double>>> &dangerMatrix,
-                    const model::Game &game) {
+                    const model::Game &game, const bool aggressive) {
     const Constants &constants = Constants::INSTANCE;
-    const double currentWeaponDistance = kWeaponDistance[*target.weapon];
+    const double currentWeaponDistance = aggressive ? 2.5 : kWeaponDistance[*target.weapon];
     const Vec2 direction = unit.position - target.position;
     const double startingAngle = direction.toRadians();
     const double distanceToTarget = (target.position - unit.position).norm();

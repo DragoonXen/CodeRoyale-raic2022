@@ -373,8 +373,8 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
 //                if (!IsReachable(unit->position, enUnit->position, visibilityFilters[unit->id])) {
 //                    moveTask.score /= 10.;
 //                }
-                moveTask.preEval = [unit, enUnit, &visibilityFilter = visibilityFilters[unit->id], &myUnits, &zoneMover, &dangerMatrix, &game]() -> std::tuple<double, std::any> {
-                    return {0., ApplyMoveToUnitTask(*unit, myUnits, *enUnit, visibilityFilter, zoneMover, dangerMatrix, game)};
+                moveTask.preEval = [unit, enUnit, &visibilityFilter = visibilityFilters[unit->id], &myUnits, &zoneMover, &dangerMatrix, &game, isCurrOpponent]() -> std::tuple<double, std::any> {
+                    return {0., ApplyMoveToUnitTask(*unit, myUnits, *enUnit, visibilityFilter, zoneMover, dangerMatrix, game, isCurrOpponent)};
                 };
 
                 moveTask.func = [unit, &visibilityFilter = visibilityFilters[unit->id]](
