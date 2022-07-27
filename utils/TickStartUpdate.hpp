@@ -142,7 +142,8 @@ struct ResultSound {
     int soundType;
 };
 
-inline void UpdatePositionFromSound(Unit &unit, const ResultSound &sound, int currentTick) {
+inline void UpdatePositionFromSound(Unit &unit, const ResultSound &sound, int currentTick,
+                                    std::unordered_map<int, double> &lastUpdatePrecision) {
     auto &obstacles = Constants::INSTANCE.Get(sound.position);
     unit.lastSeenTick = currentTick;
     for (auto &obstacle: obstacles) {
@@ -151,211 +152,232 @@ inline void UpdatePositionFromSound(Unit &unit, const ResultSound &sound, int cu
             if (direction.sqrNorm() < 1e-5) {
                 direction = {1., 0};
             }
+            lastUpdatePrecision[unit.id] = sound.radius + obstacle->radius;
             unit.position = obstacle->position + direction.toLen(obstacle->radius + Constants::INSTANCE.unitRadius);
             return;
         }
     }
+    lastUpdatePrecision[unit.id] = sound.radius;
     unit.position = sound.position;
 }
 
+inline std::unordered_map<int, std::vector<ResultSound>>
+MergeSounds(const Game &game, const std::unordered_map<int, Unit> &unitById) {
+    std::unordered_map<int, std::vector<ResultSound>> resultSound;
+    std::unordered_map<int, std::unordered_map<int, std::vector<const model::Sound *>>> soundsMap;
+    for (const auto &sound: game.sounds) {
+        auto &insideMap = soundsMap.emplace(sound.typeIndex, 0).first->second;
+        insideMap.emplace(sound.unitId, 0).first->second.push_back(&sound);
+    }
+    for (auto &[soundType, map]: soundsMap) {
+        while (!map.empty()) {
+            const model::Sound startingSound = *map.begin()->second.back();
+            map.begin()->second.pop_back();
+            ResultSound newSound = {
+                    startingSound.position,
+                    MaxSoundRadius(startingSound, unitById.at(startingSound.unitId).position),
+                    soundType
+            };
+            auto iterator = map.begin();
+            while (++iterator != map.end()) {
+                double minDistance = sqr(newSound.radius * 2);
+                auto &vector = iterator->second;
+                size_t soundIndex = vector.size();
+                for (auto &sound: vector) {
+                    const double dist = (sound->position - newSound.position).sqrNorm();
+                    if (dist < minDistance) {
+                        minDistance = dist;
+                        soundIndex = std::distance(vector.data(), &sound);
+                    }
+                }
+                if (soundIndex != vector.size()) {
+                    Vec2 newPosition = (vector[soundIndex]->position + newSound.position) * 0.5;
+
+                    double addingMaxRadius = MaxSoundRadius(*vector[soundIndex],
+                                                            unitById.at(vector[soundIndex]->unitId).position);
+                    double distance = (newPosition - newSound.position).norm();
+                    newSound.radius = std::max(newSound.radius - distance, addingMaxRadius - distance);
+                    newSound.position = newPosition;
+                    vector[soundIndex] = vector.back();
+                    vector.pop_back();
+                }
+            }
+            resultSound.emplace(soundType, 0).first->second.push_back(newSound);
+            while (!map.empty() && map.begin()->second.empty()) {
+                map.erase(map.begin()->first);
+            }
+        }
+    }
+    return resultSound;
+}
+
+inline void ApplySoundGroup(std::optional<int> weapon, std::vector<ResultSound> &soundsVec, double maxSqrDistanceToApply,
+                            std::unordered_map<int, double> &lastUpdatePrecision, Game &game) {
+    if (weapon.has_value()) {
+        for (auto &sound: soundsVec) {
+            sound.radius += Constants::INSTANCE.unitRadius;
+        }
+    }
+    const auto weaponMatch = [&weapon](const Unit& unit) {
+        if (!weapon.has_value()) {
+            return true;
+        }
+        return unit.weapon.value_or(-1) == *weapon;
+    };
+    std::unordered_set<int> matchedUnits;
+    for (size_t i = 0; i != soundsVec.size(); ++i) {
+        auto &stepSound = soundsVec[i];
+        if ([&game, &stepSound, &matchedUnits, &maxSqrDistanceToApply, &weaponMatch]() {
+            for (auto &unit: game.units) {
+                if (game.myId == unit.playerId || game.currentTick != unit.lastSeenTick || !weaponMatch(unit) ||
+                    (unit.position - stepSound.position).sqrNorm() > maxSqrDistanceToApply) {
+                    continue;
+                }
+                const double sqrDist = (unit.position - stepSound.position).sqrNorm();
+                if (sqrDist + 1e-5 < sqr(stepSound.radius)) {
+                    matchedUnits.insert(unit.id);
+                    return true;
+                }
+            }
+            return false;
+        }()) {
+            soundsVec[i--] = soundsVec.back();
+            soundsVec.pop_back();
+            continue;
+        }
+    }
+
+    const auto singleMatch = [&soundsVec, &game, &matchedUnits, &maxSqrDistanceToApply, &lastUpdatePrecision, &weaponMatch]() -> bool {
+        bool singleMatches = false;
+        for (size_t i = 0; i != soundsVec.size(); ++i) {
+            auto &stepSound = soundsVec[i];
+            int foundUnitId = -1;
+            for (auto &unit: game.units) {
+                if (game.myId == unit.playerId || !weaponMatch(unit) || matchedUnits.count(unit.id) ||
+                    (unit.position - stepSound.position).sqrNorm() > maxSqrDistanceToApply) {
+                    continue;
+                }
+                const int ticksNotSeen = game.currentTick - unit.lastSeenTick;
+                const double maxSqrDistance =
+                        sqr(ticksNotSeen * Constants::INSTANCE.maxUnitForwardSpeed *
+                            Constants::INSTANCE.tickTime + stepSound.radius +
+                            GetWithDef(lastUpdatePrecision, unit.id, 0.)) + 1e-5;
+                const double sqrDist = (unit.position - stepSound.position).sqrNorm();
+
+                if (sqrDist < maxSqrDistance) {
+                    if (foundUnitId == -1) {
+                        foundUnitId = (int) std::distance(game.units.data(), &unit);
+                    } else {
+                        foundUnitId = -1;
+                        break;
+                    }
+                }
+            }
+            if (foundUnitId != -1) {
+                auto &unit = game.units[foundUnitId];
+                matchedUnits.insert(unit.id);
+                DRAW({
+                         debugInterface->addCircle(unit.position, Constants::INSTANCE.unitRadius,
+                                                   debugging::Color(0.0, 0.5, 0.5, 0.8));
+                     });
+                UpdatePositionFromSound(unit, stepSound, game.currentTick, lastUpdatePrecision);
+                soundsVec[i--] = soundsVec.back();
+                soundsVec.pop_back();
+                singleMatches = true;
+            }
+        }
+        return singleMatches;
+    };
+
+    const auto minMatch = [&soundsVec, &game, &matchedUnits, &maxSqrDistanceToApply, &lastUpdatePrecision, &weaponMatch]() {
+        for (size_t i = 0; i != soundsVec.size(); ++i) {
+            auto &stepSound = soundsVec[i];
+            double minTimeToReach = std::numeric_limits<double>::infinity();
+            size_t unitId;
+            for (auto &unit: game.units) {
+                if (game.myId == unit.playerId || !weaponMatch(unit) || matchedUnits.count(unit.id) ||
+                    (unit.position - stepSound.position).sqrNorm() > maxSqrDistanceToApply) {
+                    continue;
+                }
+                const int ticksNotSeen = game.currentTick - unit.lastSeenTick;
+                const double maxDistance =
+                        ticksNotSeen * Constants::INSTANCE.maxUnitForwardSpeed *
+                        Constants::INSTANCE.tickTime + GetWithDef(lastUpdatePrecision, unit.id, 0.);
+                const double sqrDist = (unit.position - stepSound.position).sqrNorm();
+                if (sqrDist > sqr(maxDistance) + 1e-5) {
+                    continue;
+                }
+                const double ttr = std::sqrt(sqrDist) / Constants::INSTANCE.maxUnitForwardSpeed;
+                if (ttr < minTimeToReach) {
+                    minTimeToReach = ttr;
+                    unitId = (int) std::distance(game.units.data(), &unit);
+                }
+            }
+            if (minTimeToReach != std::numeric_limits<double>::infinity()) {
+                auto &unit = game.units[unitId];
+                matchedUnits.insert(unit.id);
+                DRAW({
+                         debugInterface->addCircle(unit.position, Constants::INSTANCE.unitRadius,
+                                                   debugging::Color(0.5, 0.5, 0., 0.8));
+                     });
+                UpdatePositionFromSound(unit, stepSound, game.currentTick, lastUpdatePrecision);
+                soundsVec[i--] = soundsVec.back();
+                soundsVec.pop_back();
+            }
+        }
+    };
+
+    while (!soundsVec.empty()) {
+        size_t size = soundsVec.size();
+        while (singleMatch());
+        minMatch();
+        if (size == soundsVec.size()) {
+            break;
+        }
+    }
+    for (auto &sound: soundsVec) {
+        double minDistance = std::numeric_limits<double>::infinity();
+        Vec2 closestMyUnit;
+        for (const auto &unit: game.units) {
+            if (unit.playerId != game.myId) {
+                continue;
+            }
+            const double currDist = (unit.position - sound.position).sqrNorm();
+            if (currDist < minDistance) {
+                minDistance = currDist;
+                closestMyUnit = unit.position;
+            }
+        }
+        auto unit = CreateEmptyUnit(GetNextUnitId());
+        unit.lastSeenTick = game.currentTick;
+        unit.direction = (closestMyUnit - sound.position).toLen(1.);
+        unit.position = sound.position;
+        unit.playerId = -1;
+        unit.aim = 0.;
+        unit.weapon = weapon.value_or(1);
+        game.units.push_back(unit);
+        DRAW({
+                 debugInterface->addCircle(unit.position, Constants::INSTANCE.unitRadius,
+                                           debugging::Color(0.0, 0.0, 0.8, 0.8));
+             });
+    }
+}
+
 inline void UpdateUnknownDangers(std::unordered_map<int, ProjectileUnitsProposals> &projectileUnitProposals,
-                                 Game &game) {
+                                 Game &game, std::unordered_map<int, double> &lastUpdatePrecision) {
     std::unordered_map<int, Unit> unitById;
     for (const auto &unit: game.units) {
         unitById[unit.id] = unit;
     }
 
-    std::unordered_map<int, std::vector<ResultSound>> resultSound;
-    {
-        std::unordered_map<int, std::unordered_map<int, std::vector<const model::Sound *>>> soundsMap;
-        for (const auto &sound: game.sounds) {
-            auto &insideMap = soundsMap.emplace(sound.typeIndex, 0).first->second;
-            insideMap.emplace(sound.unitId, 0).first->second.push_back(&sound);
-        }
-        for (auto &[soundType, map]: soundsMap) {
-            while (!map.empty()) {
-                const model::Sound startingSound = *map.begin()->second.back();
-                map.begin()->second.pop_back();
-                ResultSound newSound = {
-                        startingSound.position,
-                        MaxSoundRadius(startingSound, unitById.at(startingSound.unitId).position),
-                        soundType
-                };
-                auto iterator = map.begin();
-                while (++iterator != map.end()) {
-                    double minDistance = sqr(newSound.radius * 2);
-                    auto &vector = iterator->second;
-                    size_t soundIndex = vector.size();
-                    for (auto &sound: vector) {
-                        const double dist = (sound->position - newSound.position).sqrNorm();
-                        if (dist < minDistance) {
-                            minDistance = dist;
-                            soundIndex = std::distance(vector.data(), &sound);
-                        }
-                    }
-                    if (soundIndex != vector.size()) {
-                        Vec2 newPosition = (vector[soundIndex]->position + newSound.position) * 0.5;
-
-                        double addingMaxRadius = MaxSoundRadius(*vector[soundIndex],
-                                                                unitById.at(vector[soundIndex]->unitId).position);
-                        double distance = (newPosition - newSound.position).norm();
-                        newSound.radius = std::max(newSound.radius - distance, addingMaxRadius - distance);
-                        newSound.position = newPosition;
-                        vector[soundIndex] = vector.back();
-                        vector.pop_back();
-                    }
-                }
-                resultSound.emplace(soundType, 0).first->second.push_back(newSound);
-                while (!map.empty() && map.begin()->second.empty()) {
-                    map.erase(map.begin()->first);
-                }
-            }
-        }
+    std::unordered_map<int, std::vector<ResultSound>> resultSound = MergeSounds(game, unitById);
+    if (resultSound.find(0) != resultSound.end()) {
+        ApplySoundGroup(std::nullopt, resultSound[0], sqr(5), lastUpdatePrecision, game);
     }
-    {
-        if (resultSound.find(0) != resultSound.end()) {
-            constexpr double kMaxDistanceToApplySound = 5.;
-            std::unordered_set<int> matchedUnits;
-            auto &vector = resultSound[0];
-            for (size_t i = 0; i != vector.size(); ++i) {
-                auto &stepSound = vector[i];
-                if ([&game, &stepSound, &matchedUnits]() {
-                    for (auto &unit: game.units) {
-                        if (game.myId == unit.playerId || (unit.position - stepSound.position).sqrNorm() > sqr(kMaxDistanceToApplySound)) {
-                            continue;
-                        }
-                        if (game.currentTick != unit.lastSeenTick) {
-                            continue;
-                        }
-                        const double sqrDist = (unit.position - stepSound.position).sqrNorm();
-                        if (sqrDist + 1e-5 < sqr(stepSound.radius)) {
-                            matchedUnits.insert(unit.id);
-                            return true;
-                        }
-                    }
-                    return false;
-                }()) {
-                    vector[i--] = vector.back();
-                    vector.pop_back();
-                    continue;
-                }
-            }
-
-            const auto singleMatch = [&vector, &game, &matchedUnits]() -> bool {
-                bool singleMatches = false;
-                for (size_t i = 0; i != vector.size(); ++i) {
-                    auto &stepSound = vector[i];
-                    int foundUnitId = -1;
-                    for (auto &unit: game.units) {
-                        if (game.myId == unit.playerId ||
-                            (unit.position - stepSound.position).sqrNorm() > sqr(kMaxDistanceToApplySound) ||
-                            matchedUnits.count(unit.id)) {
-                            continue;
-                        }
-                        const int ticksNotSeen = game.currentTick - unit.lastSeenTick;
-                        const double maxSqrDistance =
-                                sqr(ticksNotSeen * Constants::INSTANCE.maxUnitForwardSpeed *
-                                    Constants::INSTANCE.tickTime + stepSound.radius) + 1e-5;
-                        const double sqrDist = (unit.position - stepSound.position).sqrNorm();
-
-                        if (sqrDist < maxSqrDistance) {
-                            if (foundUnitId == -1) {
-                                foundUnitId = (int) std::distance(game.units.data(), &unit);
-                            } else {
-                                foundUnitId = -1;
-                                break;
-                            }
-                        }
-                    }
-                    if (foundUnitId != -1) {
-                        auto& unit = game.units[foundUnitId];
-                        matchedUnits.insert(unit.id);
-                        DRAW({
-                                 debugInterface->addCircle(unit.position, Constants::INSTANCE.unitRadius,
-                                                           debugging::Color(0.0, 0.5, 0.5, 0.8));
-                             });
-                        UpdatePositionFromSound(unit, stepSound, game.currentTick);
-                        vector[i--] = vector.back();
-                        vector.pop_back();
-                        singleMatches = true;
-                    }
-                }
-                return singleMatches;
-            };
-
-            const auto minMatch = [&vector, &game, &matchedUnits]() {
-                for (size_t i = 0; i != vector.size(); ++i) {
-                    auto &stepSound = vector[i];
-                    double minTimeToReach = std::numeric_limits<double>::infinity();
-                    size_t unitId;
-                    for (auto &unit: game.units) {
-                        if (game.myId == unit.playerId ||
-                            (unit.position - stepSound.position).sqrNorm() > sqr(kMaxDistanceToApplySound) ||
-                            matchedUnits.count(unit.id)) {
-                            continue;
-                        }
-                        const int ticksNotSeen = game.currentTick - unit.lastSeenTick;
-                        const double maxDistance =
-                                ticksNotSeen * Constants::INSTANCE.maxUnitForwardSpeed *
-                                    Constants::INSTANCE.tickTime;
-                        const double sqrDist = (unit.position - stepSound.position).sqrNorm();
-                        if (sqrDist > sqr(maxDistance) + 1e-5) {
-                            continue;
-                        }
-                        const double ttr = std::sqrt(sqrDist) / Constants::INSTANCE.maxUnitForwardSpeed;
-                        if (ttr < minTimeToReach) {
-                            minTimeToReach = ttr;
-                            unitId = (int) std::distance(game.units.data(), &unit);
-                        }
-                    }
-                    if (minTimeToReach != std::numeric_limits<double>::infinity()) {
-                        auto& unit = game.units[unitId];
-                        matchedUnits.insert(unit.id);
-                        DRAW({
-                                 debugInterface->addCircle(unit.position, Constants::INSTANCE.unitRadius,
-                                                           debugging::Color(0.5, 0.5, 0., 0.8));
-                        });
-                        UpdatePositionFromSound(unit, stepSound, game.currentTick);
-                        vector[i--] = vector.back();
-                        vector.pop_back();
-                    }
-                }
-            };
-
-            while (!vector.empty()) {
-                size_t size = vector.size();
-                while (singleMatch());
-                minMatch();
-                if (size == vector.size()) {
-                    break;
-                }
-            }
-            for (auto& sound : vector) {
-                double minDistance = std::numeric_limits<double>::infinity();
-                Vec2 closestMyUnit;
-                for (const auto& unit : game.units) {
-                    if (unit.playerId != game.myId) {
-                        continue;
-                    }
-                    const double currDist = (unit.position - sound.position).sqrNorm();
-                    if (currDist < minDistance) {
-                        minDistance = currDist;
-                        closestMyUnit = unit.position;
-                    }
-                }
-                auto unit = CreateEmptyUnit(GetNextUnitId());
-                unit.lastSeenTick = game.currentTick;
-                unit.direction = (closestMyUnit - sound.position).toLen(1.);
-                unit.position = sound.position;
-                unit.playerId = -1;
-                unit.aim = 0.;
-                unit.weapon = 1;
-                game.units.push_back(unit);
-                DRAW({
-                         debugInterface->addCircle(unit.position, Constants::INSTANCE.unitRadius,
-                                                   debugging::Color(0.0, 0.0, 0.8, 0.8));
-                     });
-            }
+    constexpr std::array<double, 3> distanceToApply = {15, 20, 10};
+    for (int i = 1; i != 4; ++i) {
+        if (resultSound.find(i) != resultSound.end()) {
+            ApplySoundGroup(i - 1, resultSound[i], sqr(distanceToApply[i - 1]), lastUpdatePrecision, game);
         }
     }
     DRAWK('S', {
