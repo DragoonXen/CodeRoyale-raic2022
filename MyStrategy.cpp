@@ -101,7 +101,7 @@ MyStrategy::MyStrategy(const model::Constants &constants) {
 model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *debugInterface) {
 #ifdef DEBUG_INFO
     if (game_base.currentTick == 0) {
-        debugging::DebugState::processKeys({"I"});
+        debugging::DebugState::processKeys({"I", "S"});
     }
 #endif
     TimeMeasure::start();
@@ -153,6 +153,7 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
     }
     ZoneMover zoneMover(game.zone);
 
+
     {
         TimeMeasure::end(1);
         auto projectilesUnitInfo = UpdateProjectiles(game, last_tick_game, myUnits, game.units, visibilityFilters);
@@ -161,9 +162,18 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
         TimeMeasure::end(3);
         UpdateVisited(lastSeenArray, myUnits, game.currentTick);
         TimeMeasure::end(9);
-        UpdateUnits(game, last_tick_game, myUnits, game.units, visibilityFilters, std::move(projectilesUnitInfo), this->unitMovementMem);
+        UpdateUnits(game, last_tick_game, myUnits, visibilityFilters, std::move(projectilesUnitInfo),
+                    this->unitMovementMem);
         TimeMeasure::end(4);
+        UpdateUnknownDangers(projectilesUnitInfo, game);
+        TimeMeasure::end(11);
     }
+    std::unordered_map<int, const Unit *> unitById;
+    const std::vector<Unit> unitsBackup = game.units;
+    for (const auto &unit: unitsBackup) {
+        unitById[unit.id] = &unit;
+    }
+
     myUnits = filterUnits(game.units, my_units_filter);
     auto enemyUnits = filterUnits(game.units, enemies_filter);
 
@@ -289,11 +299,15 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
     }
     centerPoint *= (1. / myUnits.size());
 
-    std::unordered_map<int, const Unit *> unitById;
-    const std::vector<Unit> unitsBackup = game.units;
-    for (const auto &unit: unitsBackup) {
-        unitById[unit.id] = &unit;
-    }
+    DRAWK('S', {
+        const auto color = debugging::Color(.5, 0., .5, .5);
+        for (const auto &sound: game_base.sounds) {
+            DrawCross(sound.position, 0.1, color, debugInterface);
+            debugInterface->addSegment(sound.position, unitById[sound.unitId]->position, 0.1, color);
+            const double actualRadius = MaxSoundRadius(sound, unitById[sound.unitId]->position);
+            debugInterface->addRing(sound.position, actualRadius, 0.05, color);
+        }
+    });
     std::unordered_map<int, const Loot *> lootById;
     std::priority_queue<Task> tasks;
     const auto evalPathDanger = [&game, &dangerMatrix = this->dangerMatrix](const Unit &unit, Vec2 to) {

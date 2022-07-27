@@ -374,6 +374,15 @@ inline int TicksToKillUnit(const Unit& unit, const Unit& target, int currentTick
     return ticksKill;
 }
 
+inline double MaxSoundRadius(const model::Sound& sound, Vec2 unitPos) {
+    Constants &constants = Constants::INSTANCE;
+    const double &sDistance = constants.sounds[sound.typeIndex].distance;
+    const double &sOffset = constants.sounds[sound.typeIndex].offset;
+    const double maxDistance = std::min(
+            (sound.position - unitPos).norm() / (1. - sOffset), sDistance);
+    return maxDistance * sOffset;
+}
+
 #ifdef DEBUG_INFO
 #define VERIFY(a, b) {if (!(a)){std::cerr << (b) << std::endl; getchar();exit(-1);}}
 #else

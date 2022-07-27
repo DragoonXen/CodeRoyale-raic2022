@@ -13,7 +13,7 @@
 
 namespace TimeMeasure {
 #ifdef TIMING_ENABLED
-    const int kMaxT = 11;
+    const int kMaxT = 12;
     static std::array<long long, kMaxT> timings = []() {
         std::array<long long, kMaxT> res = {};
         for (size_t i = 0; i != kMaxT; ++i) {
