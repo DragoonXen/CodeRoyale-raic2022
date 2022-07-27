@@ -226,14 +226,17 @@ ApplyMoveToUnitTask(const Unit &unit, const std::vector<Unit *> &myUnits, const 
         const size_t kMinDistance = 3;
         const double kAcceptableDangerPerStep = 0.05;
 
-        size_t maxSteps = (target.position - newPosition).norm() - kMinDistance;
-        const Vec2 dir = (target.position - newPosition).toLen(1.);
-        for (size_t i = 1; i <= maxSteps; ++i) {
-            Vec2 nextPos = newPosition + dir * (double) i;
-            const double value = EvaluateDanger(nextPos, dangerMatrix, game) - i * kAcceptableDangerPerStep;
-            if (value < bestDanger) {
-                bestDanger = value;
-                bestPos = nextPos;
+        // move closer only if no action now
+        if (!unit.action.has_value()) {
+            size_t maxSteps = (target.position - newPosition).norm() - kMinDistance;
+            const Vec2 dir = (target.position - newPosition).toLen(1.);
+            for (size_t i = 1; i <= maxSteps; ++i) {
+                Vec2 nextPos = newPosition + dir * (double) i;
+                const double value = EvaluateDanger(nextPos, dangerMatrix, game) - i * kAcceptableDangerPerStep;
+                if (value < bestDanger) {
+                    bestDanger = value;
+                    bestPos = nextPos;
+                }
             }
         }
 
