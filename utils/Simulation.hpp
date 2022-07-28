@@ -65,7 +65,7 @@ struct ComplexMoveRuleViewer {
 UnitOrder ApplyAvoidRule(Unit& unit, const MoveRule& selected_rule);
 
 inline std::tuple<Unit, double, const Projectile *>
-Simulate(Unit unit, const Game &game, const ComplexMoveRule &moveRule, size_t deep = 20) {
+Simulate(Unit unit, const Game &game, const ComplexMoveRule &moveRule, size_t deep = 20, const bool draw = false) {
     const auto &constants = Constants::INSTANCE;
     double damagePenalty = 0.;
     Vec2 last_position;
@@ -167,6 +167,9 @@ Simulate(Unit unit, const Game &game, const ComplexMoveRule &moveRule, size_t de
             damage += constants.weapons[projectile->weaponTypeIndex].projectileDamage;
         }
         DRAWK('I',
+              if (!draw) {
+                  return;
+              }
               debugInterface->addRing(unit.position, constants.unitRadius, 0.01,
                                       damage == 0 ? debugging::Color(1., .7, 0., .8) :
                                       debugging::Color(1., 0., 0., .8));

@@ -17,6 +17,7 @@ public:
 
     std::optional<model::Vec2> point_move_to;
     std::optional<model::Vec2> point_look_to;
+    std::unordered_map<int, double> lastUpdatePrecision;
     std::unordered_map<int, MoveRule> usedAvoidRule;
     std::unordered_map<int, double> incomingDamage;
     // radarState, starting angle, last finish tick

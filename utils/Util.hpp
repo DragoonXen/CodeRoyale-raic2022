@@ -383,6 +383,16 @@ inline double MaxSoundRadius(const model::Sound& sound, Vec2 unitPos) {
     return maxDistance * sOffset;
 }
 
+template<typename K, typename V>
+V GetWithDef(const std::unordered_map<K, V> &m, const K &key, const V &defVal) {
+    typename std::unordered_map<K, V>::const_iterator it = m.find(key);
+    if (it == m.end()) {
+        return defVal;
+    } else {
+        return it->second;
+    }
+}
+
 #ifdef DEBUG_INFO
 #define VERIFY(a, b) {if (!(a)){std::cerr << (b) << std::endl; getchar();exit(-1);}}
 #else

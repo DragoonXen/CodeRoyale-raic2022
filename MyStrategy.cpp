@@ -165,7 +165,12 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
         UpdateUnits(game, last_tick_game, myUnits, visibilityFilters, std::move(projectilesUnitInfo),
                     this->unitMovementMem);
         TimeMeasure::end(4);
-        UpdateUnknownDangers(projectilesUnitInfo, game);
+        for (const auto& unit : game.units) {
+            if (unit.lastSeenTick == game.currentTick) {
+                lastUpdatePrecision.erase(unit.id);
+            }
+        }
+        UpdateUnknownDangers(projectilesUnitInfo, game, lastUpdatePrecision);
         TimeMeasure::end(11);
     }
     std::unordered_map<int, const Unit *> unitById;
@@ -983,6 +988,7 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
         auto [score, ruleId] = ChooseBest(*unit, game, complexRules, dangerMatrix);
 
         const auto [resultUnit, dScore, _2] = Simulate(*unit, game, complexRules[ruleId], 1);
+        DRAWK('I', { Simulate(*unit, game, complexRules[ruleId], 20, true); });
         incomingDamage[unit->id] = (unit->shield + unit->health) - (resultUnit.shield + resultUnit.health);
         auto order = ApplyAvoidRule(*unit, complexRules[ruleId].storage.front());
         if (pOrder.action.has_value() &&
