@@ -616,7 +616,7 @@ inline void UpdateUnits(Game &game, std::optional<Game> &lastTick, const std::ve
     }
 
     for (auto &unit: game.units) {
-        if (!unit.remainingSpawnTime.has_value() && unit.playerId != game.myId) {
+        if (!unit.remainingSpawnTime.has_value() && unit.playerId != game.myId && unit.playerId != -1) {
             auto [iter, _] = unitMovementMem.emplace(unit.id, 0);
             iter->second.UpdateValue(unit, game.currentTick);
         }
