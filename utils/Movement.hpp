@@ -63,6 +63,41 @@ inline double CalcAimSpeedModifier(const Unit& unit) {
                                  (1. - Constants::INSTANCE.weapons[*unit.weapon].aimMovementSpeedModifier) * unit.aim);
 }
 
+inline Vec2 MaxSpeedVector(Vec2 position, Vec2 direction, Vec2 from, Vec2 to) {
+    const Constants &constants = Constants::INSTANCE;
+    const Vec2 coordsShift = position + direction * constants.unitMovementCircleShift;
+    DRAW({
+             debugInterface->addSegment(position, from, 0.05, debugging::Color(1., 0., .0, 0.5));
+             debugInterface->addSegment(position, to, 0.05,
+                                        debugging::Color(0., 1., .0, 0.5));
+             debugInterface->addSegment(from, to, 0.05, debugging::Color(.5, 0., .5, 0.5));
+         });
+    position -= coordsShift;
+    from -= coordsShift;
+    to -= coordsShift;
+
+    const double a = to.y - from.y;
+    const double b = from.x - to.x;
+    const double c = -a * to.x - b * to.y;
+
+    const double aabb = a * a + b * b;
+
+    const double x0 = -a * c / aabb;
+    const double y0 = -b * c / aabb;
+    const double d = sqr(constants.unitMovementCircleRadius) - c * c / aabb;
+    const double mult = sqrt(d / aabb);
+    Vec2 result = (Vec2{x0 - b * mult, y0 + a * mult} - position);
+    DRAW({
+             debugInterface->addRing(coordsShift, constants.unitMovementCircleRadius, 0.025,
+                                     debugging::Color(0., 0., 1., 0.5));
+             debugInterface->addSegment(from + coordsShift, position + coordsShift + result, 0.025,
+                                        debugging::Color(0., 1., 0., 0.5));
+             debugInterface->addSegment(position + coordsShift, position + coordsShift + result, 0.025,
+                                        debugging::Color(1., 0., .0, 0.5));
+        });
+    return result;
+}
+
 inline Vec2 MaxSpeedVector(Vec2 position, Vec2 direction, Vec2 target, const double aimModifier = 1) {
     const Constants &constants = Constants::INSTANCE;
     const Vec2 coordsShift = position + direction * constants.unitMovementCircleShift;

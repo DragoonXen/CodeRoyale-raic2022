@@ -44,28 +44,31 @@ ApplyAttackTask(const Unit &unit,
                 POrder &order) {
     const Constants& constants = Constants::INSTANCE;
 
-    auto &movementStat = unitMovementMem.at(target.id);
-    const Vec2 aimTarget = [&unit, &movementStat, &target, &currentTick]() -> Vec2 {
-        auto &movementList = movementStat.mem;
-        // move fast enough
-        if (movementStat.lastUpdateTick == currentTick && movementList.back().velocity.sqrNorm() > sqr(3.) &&
-            std::abs(AngleDiff(movementList.back().direction, target.direction.toRadians())) < M_PI / 10.) {
-            Unit copy = target;
-            MoveRule rule;
-            rule.moveDirection = target.position + Vec2(movementList.back().direction) * 50;
-            rule.lookDirection = rule.moveDirection;
-            rule.keepAim = false;
-            rule.speedLimit = std::numeric_limits<double>::infinity();
-            const Constants &constants = Constants::INSTANCE;
-            double bulletSpeed = constants.weapons[*unit.weapon].projectileSpeed * constants.tickTime;
-            for (size_t tick = 1; tick <= 30; ++tick) {
-                ApplyAvoidRule(copy, rule);
-                DRAW({
-                         debugInterface->addRing(copy.position, 1., .01, debugging::Color(0., 0., 1., .8));
-                     });
-                double distance = (copy.position - unit.position).norm() - constants.unitRadius * 2;
-                if (bulletSpeed * tick >= distance) {
-                    return copy.position;
+    const Vec2 aimTarget = [&unit, &unitMovementMem, &target, &currentTick]() -> Vec2 {
+        if (auto iter = unitMovementMem.find(target.id); iter != unitMovementMem.end()) {
+            auto &movementStat = iter->second;
+            // move fast enough
+            auto &movementList = movementStat.mem;
+            if (movementStat.lastUpdateTick == currentTick && movementList.back().velocity.sqrNorm() > sqr(3.) &&
+                std::abs(AngleDiff(movementList.back().direction.toRadians(), target.direction.toRadians())) <
+                M_PI / 10.) {
+                Unit copy = target;
+                MoveRule rule;
+                rule.moveDirection = target.position + Vec2(movementList.back().direction) * 50;
+                rule.lookDirection = rule.moveDirection;
+                rule.keepAim = false;
+                rule.speedLimit = std::numeric_limits<double>::infinity();
+                const Constants &constants = Constants::INSTANCE;
+                double bulletSpeed = constants.weapons[*unit.weapon].projectileSpeed * constants.tickTime;
+                for (size_t tick = 1; tick <= 30; ++tick) {
+                    ApplyAvoidRule(copy, rule);
+                    DRAW({
+                             debugInterface->addRing(copy.position, 1., .01, debugging::Color(0., 0., 1., .8));
+                         });
+                    double distance = (copy.position - unit.position).norm() - constants.unitRadius * 2;
+                    if (bulletSpeed * tick >= distance) {
+                        return copy.position;
+                    }
                 }
             }
         }

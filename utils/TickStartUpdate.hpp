@@ -450,32 +450,20 @@ inline void UpdateUnitFromInfo(Unit &unit, ProjectileUnitsProposals &proposal) {
     unit.lastSeenTick = proposal.tick;
 }
 
-using TickSpeedDirUpdate = std::pair<double, double>;
-
-struct MovementMem {
-
-    MovementMem(Vec2 velocity, double direction, Vec2 position, double aim, std::optional<int> weapon) :
-            velocity(velocity),
-            direction(direction),
-            position(position),
-            aim(aim),
-            weapon(weapon) {
-    }
-
-    Vec2 velocity;
-    double direction;
-    Vec2 position;
-    double aim;
-    std::optional<int> weapon;
-};
-
 struct MovementStat {
-    MovementStat(int val) {}
+    MovementStat(int val) : lastUpdateTick(0), lastSuccessfulPrediction(0), mem(), totalTries(0),
+                            successPrediction(0) {}
+
     int lastUpdateTick;
-    std::list<MovementMem> mem;
+    int lastSuccessfulPrediction;
+    std::list<Unit> mem;
     int totalTries;
     int successPrediction;
-    inline void UpdateValue(MovementMem&& newVal, int currentTick) {
+
+    static inline std::array<int, 4> moveVariant;
+    static inline std::array<int, 4> successVariant;
+
+    inline void UpdateValue(Unit newVal, int currentTick) {
         constexpr size_t kMaxResultCount = 3;
         if (lastUpdateTick + 1 < currentTick) {
             mem.clear();
@@ -483,7 +471,89 @@ struct MovementStat {
         lastUpdateTick = currentTick;
         mem.push_back(newVal);
         if (mem.size() > kMaxResultCount) {
-            mem.pop_back();
+            mem.pop_front();
+        }
+
+        if (mem.size() < 3) {
+            return;
+        }
+        MoveRule supposedRule;
+        const Unit &base = *(++(++mem.rbegin()));
+        const Unit &prev = *(++mem.rbegin());
+        supposedRule.keepAim = prev.aim > 1. - 1e-6 || prev.aim > base.aim;
+        const double rotationSpeed = RotationSpeed(base.aim, base.weapon);
+        const double aDiff = AngleDiff(prev.direction.toRadians(), base.direction.toRadians());
+        if (std::abs(aDiff - rotationSpeed) < 1e-5) { // unknown look point but we know rotate direction
+            double resultAngle = M_PI_2;
+            if (resultAngle * aDiff < 0) {
+                resultAngle *= -1.;
+            }
+            const double targetAngle = AddAngle(prev.direction.toRadians(), resultAngle);
+            supposedRule.lookDirection = prev.position + Vec2(targetAngle) * 50.;
+        } else {
+            auto first = Lane(base.position, base.position + base.direction);
+            auto second = Lane(prev.position, prev.position + prev.direction);
+            if (!Parallel(first, second)) {
+                Vec2 intersectPoint;
+                if (Intersect(first, second, intersectPoint)) {
+                    Vec2 newVec = intersectPoint - prev.position;
+                    if (std::abs(AngleDiff(newVec.toRadians(), prev.direction.toRadians())) < M_PI_2) {
+                        DRAW(debugInterface->addSegment(prev.position, intersectPoint, 0.1,
+                                                        debugging::Color(1., 0., 0., 0.3)););
+                        supposedRule.lookDirection = intersectPoint;
+                    } else {
+                        DRAW(debugInterface->addSegment(prev.position, intersectPoint, 0.1,
+                                                        debugging::Color(0., 1., 0., 0.3)););
+                    }
+                }
+            }
+        }
+
+        Vec2 velocityDiff = prev.velocity - base.velocity;
+        supposedRule.speedLimit = std::numeric_limits<double>::infinity();
+        int currVariant;
+        const double velocityDiffNorm = velocityDiff.norm();
+        if (velocityDiffNorm > Constants::INSTANCE.unitAccelerationPerTick + 1e-8) { // collision detected. just suppose we will move to
+            supposedRule.moveDirection = base.position + base.velocity * 50.;
+            currVariant = 0;
+        } else if (std::abs(velocityDiffNorm - Constants::INSTANCE.unitAccelerationPerTick) < 1e-5) {
+            // maximum change. need to retrieve direction
+            if (base.aim < 1e-5 && !supposedRule.keepAim) {
+                auto newVector = MaxSpeedVector(prev.position, prev.direction, prev.position + prev.velocity,
+                                                prev.position + prev.velocity + velocityDiff);
+                supposedRule.moveDirection = prev.position + newVector.toLen(50.);
+                currVariant = 1;
+            } else {
+                supposedRule.moveDirection = prev.position + Vec2(0, 1e-5);
+                currVariant = 2;
+            }
+        } else {
+            supposedRule.moveDirection = prev.position + prev.velocity.clone().toLen(50.);
+            currVariant = 3;
+        }
+        ++totalTries;
+        Unit forPrediction = prev;
+        ApplyAvoidRule(forPrediction, supposedRule);
+        const Unit &toCompare = mem.back();
+        ++moveVariant[currVariant];
+        constexpr double kMaxAcceptableDiff = 1e-3;
+        const double kMaxAcceptablePosDiff = Constants::INSTANCE.unitAccelerationPerTick * Constants::INSTANCE.tickTime * kMaxAcceptableDiff;
+
+        const double sqrDiff = (forPrediction.position - toCompare.position).sqrNorm();
+        if (sqrDiff < sqr(kMaxAcceptablePosDiff)) {
+            ++successPrediction;
+            ++successVariant[currVariant];
+            lastSuccessfulPrediction = currentTick;
+            DRAW({
+                     debugInterface->addCircle(forPrediction.position, 0.3, debugging::Color(0., 1., 0., 0.9));
+                     for (size_t i = 0; i != 10; ++i) {
+                         ApplyAvoidRule(forPrediction, supposedRule);
+                         debugInterface->addRing(forPrediction.position, Constants::INSTANCE.unitRadius, 0.05,
+                                                 debugging::Color(1., 1., 0., 0.9));
+                     }
+                 });
+        } else {
+            DRAW(debugInterface->addCircle(forPrediction.position, 0.3, debugging::Color(1., 0., 0., 0.9)););
         }
     }
 };
@@ -535,31 +605,30 @@ inline void UpdateUnits(Game &game, std::optional<Game> &lastTick, const std::ve
     }
 
     for (auto &unit: game.units) {
-        if (from_prev_tick.count(unit.id)) {
-            //unitMovementMem[unit.id];
-            Unit *old_unit = from_prev_tick[unit.id];
-            // speed vector
-            Vec2 change = (unit.position - old_unit->position) * constants.ticksPerSecond;
+        if (!unit.remainingSpawnTime.has_value() && unit.playerId != game.myId) {
             auto [iter, _] = unitMovementMem.emplace(unit.id, 0);
-            iter->second.UpdateValue(
-                    MovementMem{unit.velocity, unit.direction.toRadians(), unit.position, unit.aim, unit.weapon},
-                    game.currentTick);
-//            if (std::abs(AngleDiff(list.back().second, unit.direction.toRadians())) < M_PI / 10.) {
-//                //void addRing(model::Vec2 position, double radius, double width, debugging::Color color);
-//                DRAW({
-//                         debugInterface->addRing(unit.position + unit.direction * list.back().first, 1., .1,
-//                                                 debugging::Color(0., 0., 1., .8));
-//                         debugInterface->addPlacedText(unit.position + unit.direction * list.back().first,
-//                                                       "u" + std::to_string(unit.id), {0.5, 0.5},
-//                                                       .1, debugging::Color(0., 0., 0., 1.));
-//                     });
-//            }
+            iter->second.UpdateValue(unit, game.currentTick);
+        }
 
+        if (from_prev_tick.count(unit.id)) {
             from_prev_tick.erase(unit.id);
         }
         projectilesUnitInfo.erase(unit.id);
         unit.lastSeenTick = game.currentTick;
     }
+    DRAW({
+             std::stringstream print;
+             print << game.currentTick;
+             for (size_t i = 0; i != 4; ++i) {
+                 print << " " << MovementStat::successVariant[i] << "/" << MovementStat::moveVariant[i];
+                 if (MovementStat::moveVariant[i] != 0) {
+                     print << "("
+                           << to_string_p(MovementStat::successVariant[i] / (double) MovementStat::moveVariant[i], 3)
+                           << ")";
+                 }
+             }
+             std::cerr << print.str() << std::endl;
+         });
 
     if (lastTick) {
         std::vector<Unit *> unitsToAdd;

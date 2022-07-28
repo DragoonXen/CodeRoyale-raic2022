@@ -393,6 +393,40 @@ V GetWithDef(const std::unordered_map<K, V> &m, const K &key, const V &defVal) {
     }
 }
 
+struct Lane {
+    double a,b,c;
+    Lane(const Vec2& p, const Vec2& q) {
+        a = p.y - q.y;
+        b = q.x - p.x;
+        c = -a * p.x - b * p.y;
+    }
+};
+
+const double EPS = 1e-9;
+
+inline double Det(double a, double b, double c, double d) {
+    return a * d - b * c;
+}
+
+inline bool Intersect(Lane m, Lane n, Vec2 &res) {
+    double zn = Det(m.a, m.b, n.a, n.b);
+    if (abs(zn) < EPS)
+        return false;
+    res.x = -Det(m.c, m.b, n.c, n.b) / zn;
+    res.y = -Det(m.a, m.c, n.a, n.c) / zn;
+    return true;
+}
+
+inline bool Parallel(Lane m, Lane n) {
+    return abs(Det(m.a, m.b, n.a, n.b)) < EPS;
+}
+
+inline bool Equivalent(Lane m, Lane n) {
+    return abs(Det(m.a, m.b, n.a, n.b)) < EPS
+           && abs(Det(m.a, m.c, n.a, n.c)) < EPS
+           && abs(Det(m.b, m.c, n.b, n.c)) < EPS;
+}
+
 #ifdef DEBUG_INFO
 #define VERIFY(a, b) {if (!(a)){std::cerr << (b) << std::endl; getchar();exit(-1);}}
 #else
