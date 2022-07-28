@@ -24,6 +24,10 @@ public:
     std::unordered_map<int, std::tuple<int, double, int>> radarTaskData;
     std::unordered_map<int, std::list<double>> unknownDamage;
     std::unordered_map<int, MovementStat> unitMovementMem;
+    std::unordered_map<int, Vec2> prevPos;
+    std::unordered_map<int, int> ticksWithoutMovement;
+    std::unordered_map<int, std::tuple<int, Vec2>> unstuckMovement;
+    std::unordered_map<int, model::UnitOrder> prevOrders;
     std::shared_ptr<std::vector<std::vector<std::pair<int, double>>>> dangerMatrix;
     std::vector<std::vector<int>> lastSeenArray;
     static std::unordered_map<int, std::function<bool(const std::any&, const std::any&)>> taskFilter;

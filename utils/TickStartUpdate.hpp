@@ -627,19 +627,19 @@ inline void UpdateUnits(Game &game, std::optional<Game> &lastTick, const std::ve
         projectilesUnitInfo.erase(unit.id);
         unit.lastSeenTick = game.currentTick;
     }
-    DRAW({
-             std::stringstream print;
-             print << game.currentTick;
-             for (size_t i = 0; i != 4; ++i) {
-                 print << " " << MovementStat::successVariant[i] << "/" << MovementStat::moveVariant[i];
-                 if (MovementStat::moveVariant[i] != 0) {
-                     print << "("
-                           << to_string_p(MovementStat::successVariant[i] / (double) MovementStat::moveVariant[i], 3)
-                           << ")";
-                 }
-             }
-             std::cerr << print.str() << std::endl;
-         });
+//    DRAW({
+//             std::stringstream print;
+//             print << game.currentTick;
+//             for (size_t i = 0; i != 4; ++i) {
+//                 print << " " << MovementStat::successVariant[i] << "/" << MovementStat::moveVariant[i];
+//                 if (MovementStat::moveVariant[i] != 0) {
+//                     print << "("
+//                           << to_string_p(MovementStat::successVariant[i] / (double) MovementStat::moveVariant[i], 3)
+//                           << ")";
+//                 }
+//             }
+//             std::cerr << print.str() << std::endl;
+//         });
 
     if (lastTick) {
         std::vector<Unit *> unitsToAdd;

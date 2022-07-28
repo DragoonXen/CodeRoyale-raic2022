@@ -222,6 +222,15 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
                 }
                 return nullptr;
             }();
+            Vec2 poseChange = prevPos[unit->id] - unit->position;
+            if (poseChange.sqrNorm() < 1e-16) {
+//                std::cerr << game.currentTick << ": stuck detected " << unit->id << " ticks "
+//                          << ++ticksWithoutMovement[unit->id] << std::endl;
+                ++ticksWithoutMovement[unit->id];
+            } else {
+                ticksWithoutMovement[unit->id] = 0;
+            }
+            prevPos[unit->id] = unit->position;
             const double actualIncomingDamage = (old_unit->shield + old_unit->health) - (unit->shield + unit->health);
             const double unknownIncomingDamage = std::max(actualIncomingDamage - incomingDamage[unit->id], 0.);
             constexpr size_t maxDamageCountingPeriod = 90;
@@ -865,6 +874,62 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
         };
         tasks.push(radarTask);
     }
+
+    /** ==========================================================================
+     * Unstuck
+     * ==========================================================================
+     */
+    {
+        int lastUnstuckStart = -1000;
+        constexpr int ticksToUnstuckMove = 10;
+        for (auto &unit: myUnits) {
+            auto iter = unstuckMovement.find(unit->id);
+            if (iter == unstuckMovement.end()) {
+                continue;
+            }
+            auto &[startTick, position] = iter->second;
+            if (startTick + ticksToUnstuckMove < game.currentTick) {
+                unstuckMovement.erase(iter);
+                continue;
+            }
+            lastUnstuckStart = startTick;
+        }
+        constexpr int ticksBetweenUnstucks = 5;
+        constexpr int stuckTicksToUnstuck = 4;
+        if (lastUnstuckStart + ticksBetweenUnstucks < game.currentTick) {
+            for (auto &unit: myUnits) {
+                auto iter = ticksWithoutMovement.find(unit->id);
+                if (iter == ticksWithoutMovement.end() || iter->second < stuckTicksToUnstuck ||
+                    unstuckMovement.find(unit->id) != unstuckMovement.end()) {
+                    continue;
+                }
+                auto prevOrder = prevOrders.find(unit->id);
+                Vec2 nextPos = ((prevOrder == prevOrders.end() || prevOrder->second.targetVelocity.sqrNorm() < 1e-8) ?
+                                unit->position - unit->direction.clone().toLen(20.) :
+                                unit->position - prevOrder->second.targetVelocity.toLen(20.));
+                unstuckMovement[unit->id] = {game.currentTick, nextPos};
+                break;
+            }
+        }
+        for (auto &unit: myUnits) {
+            auto iter = unstuckMovement.find(unit->id);
+            if (iter == unstuckMovement.end()) {
+                continue;
+            }
+            auto &[startTick, position] = iter->second;
+            Task moveTask{1001, unit->id, std::to_string(unit->id) + " unstuck", {OrderType::kMove}};
+            moveTask.score = 1e9;
+            moveTask.func = [unit, &visibilityFilters, position = position](
+                    const std::any &evalData, POrder &order) -> std::vector<OrderType> {
+                DRAW(debugInterface->addGradientSegment(unit->position, debugging::Color(1., 0., 0., 0.5),
+                                                        position, debugging::Color(0., 1., 0., 0.5),
+                                                        0.3););
+                return ApplyMoveTo(*unit, position, visibilityFilters[unit->id],
+                                   std::numeric_limits<double>::infinity(), order);
+            };
+            tasks.push(moveTask);
+        }
+    }
     TimeMeasure::end(5);
 
     /** ==================================================================================
@@ -1091,6 +1156,7 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
 
     DRAW(debugInterface->flush(););
     TimeMeasure::end(10);
+    prevOrders = orders;
     return model::Order(std::move(orders));
 }
 
