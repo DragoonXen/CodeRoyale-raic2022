@@ -502,6 +502,7 @@ inline MoveRule ProposeRule(const Unit& base, const Unit& prev) {
         if (prevVelocity.sqrNorm() < 1e-16) {
             prevVelocity += Vec2(0, 1e-5);
         }
+        supposedRule.speedLimit = prevVelocity.norm();
         supposedRule.moveDirection = prev.position + prevVelocity.toLen(50.);
     }
     return supposedRule;
