@@ -498,7 +498,11 @@ inline MoveRule ProposeRule(const Unit& base, const Unit& prev) {
             supposedRule.moveDirection = prev.position + Vec2(0, 1e-5);
         }
     } else {
-        supposedRule.moveDirection = prev.position + prev.velocity.clone().toLen(50.);
+        Vec2 prevVelocity = prev.velocity;
+        if (prevVelocity.sqrNorm() < 1e-16) {
+            prevVelocity += Vec2(0, 1e-5);
+        }
+        supposedRule.moveDirection = prev.position + prevVelocity.toLen(50.);
     }
     return supposedRule;
 }
