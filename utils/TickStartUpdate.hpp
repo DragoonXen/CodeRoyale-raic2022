@@ -452,6 +452,42 @@ inline void UpdateUnitFromInfo(Unit &unit, ProjectileUnitsProposals &proposal) {
 
 using TickSpeedDirUpdate = std::pair<double, double>;
 
+struct MovementMem {
+
+    MovementMem(Vec2 velocity, double direction, Vec2 position, double aim, std::optional<int> weapon) :
+            velocity(velocity),
+            direction(direction),
+            position(position),
+            aim(aim),
+            weapon(weapon) {
+    }
+
+    Vec2 velocity;
+    double direction;
+    Vec2 position;
+    double aim;
+    std::optional<int> weapon;
+};
+
+struct MovementStat {
+    MovementStat(int val) {}
+    int lastUpdateTick;
+    std::list<MovementMem> mem;
+    int totalTries;
+    int successPrediction;
+    inline void UpdateValue(MovementMem&& newVal, int currentTick) {
+        constexpr size_t kMaxResultCount = 3;
+        if (lastUpdateTick + 1 < currentTick) {
+            mem.clear();
+        }
+        lastUpdateTick = currentTick;
+        mem.push_back(newVal);
+        if (mem.size() > kMaxResultCount) {
+            mem.pop_back();
+        }
+    }
+};
+
 inline void
 UpdateVisited(std::vector<std::vector<int>> &lastSeenArray, const std::vector<Unit *> &units, int currentTick) {
     for (size_t i = 0; i != lastSeenArray.size(); ++i) {
@@ -475,7 +511,7 @@ UpdateVisited(std::vector<std::vector<int>> &lastSeenArray, const std::vector<Un
 inline void UpdateUnits(Game &game, std::optional<Game> &lastTick, const std::vector<Unit *> &units,
                         const std::unordered_map<int, VisibleFilter> &filters,
                         std::unordered_map<int, ProjectileUnitsProposals> projectilesUnitInfo,
-                        std::unordered_map<int, std::list<TickSpeedDirUpdate>> &unitMovementMem) {
+                        std::unordered_map<int, MovementStat> &unitMovementMem) {
     DRAW(for (auto &[id, info]: projectilesUnitInfo) {
         debugInterface->addCircle(info.position, Constants::INSTANCE.unitRadius,
                                   debugging::Color(1., 0., 0., .3));
@@ -502,15 +538,12 @@ inline void UpdateUnits(Game &game, std::optional<Game> &lastTick, const std::ve
         if (from_prev_tick.count(unit.id)) {
             //unitMovementMem[unit.id];
             Unit *old_unit = from_prev_tick[unit.id];
-            constexpr size_t kMaxResultCount = 3;
             // speed vector
             Vec2 change = (unit.position - old_unit->position) * constants.ticksPerSecond;
             auto [iter, _] = unitMovementMem.emplace(unit.id, 0);
-            auto &list = iter->second;
-            list.emplace_back(change.norm(), change.toRadians());
-            if (list.size() > kMaxResultCount) {
-                list.pop_front();
-            }
+            iter->second.UpdateValue(
+                    MovementMem{unit.velocity, unit.direction.toRadians(), unit.position, unit.aim, unit.weapon},
+                    game.currentTick);
 //            if (std::abs(AngleDiff(list.back().second, unit.direction.toRadians())) < M_PI / 10.) {
 //                //void addRing(model::Vec2 position, double radius, double width, debugging::Color color);
 //                DRAW({

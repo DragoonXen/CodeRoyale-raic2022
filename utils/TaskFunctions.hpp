@@ -40,18 +40,19 @@ ApplyAttackTask(const Unit &unit,
                 const Unit &target,
                 const int currentTick,
                 std::unordered_map<int, VisibleFilter> &visibilityFilters,
-                std::unordered_map<int, std::list<TickSpeedDirUpdate>> unitMovementMem,
+                const std::unordered_map<int, MovementStat>& unitMovementMem,
                 POrder &order) {
     const Constants& constants = Constants::INSTANCE;
 
-    auto& movementList = unitMovementMem[target.id];
-    const Vec2 aimTarget = [&unit, &movementList, &target]() -> Vec2 {
+    auto &movementStat = unitMovementMem.at(target.id);
+    const Vec2 aimTarget = [&unit, &movementStat, &target, &currentTick]() -> Vec2 {
+        auto &movementList = movementStat.mem;
         // move fast enough
-        if (movementList.back().first > 3. &&
-            std::abs(AngleDiff(movementList.back().second, target.direction.toRadians())) < M_PI / 10.) {
+        if (movementStat.lastUpdateTick == currentTick && movementList.back().velocity.sqrNorm() > sqr(3.) &&
+            std::abs(AngleDiff(movementList.back().direction, target.direction.toRadians())) < M_PI / 10.) {
             Unit copy = target;
             MoveRule rule;
-            rule.moveDirection = target.position + Vec2(movementList.back().second) * 50;
+            rule.moveDirection = target.position + Vec2(movementList.back().direction) * 50;
             rule.lookDirection = rule.moveDirection;
             rule.keepAim = false;
             rule.speedLimit = std::numeric_limits<double>::infinity();
