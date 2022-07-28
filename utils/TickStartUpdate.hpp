@@ -450,7 +450,65 @@ inline void UpdateUnitFromInfo(Unit &unit, ProjectileUnitsProposals &proposal) {
     unit.lastSeenTick = proposal.tick;
 }
 
-inline MoveRule ProposeRule(const Unit& base, const Unit& prev) {
+inline MoveRule ProposeRule(const Unit &base, const Unit &prev);
+
+struct MovementStat {
+    MovementStat(int val) : lastUpdateTick(0), lastSuccessfulPrediction(0), mem(), totalTries(0),
+                            successPrediction(0) {}
+
+    int lastUpdateTick;
+    int lastSuccessfulPrediction;
+    std::list<Unit> mem;
+    int totalTries;
+    int successPrediction;
+
+    static inline std::array<int, 4> moveVariant;
+    static inline std::array<int, 4> successVariant;
+    static inline int currMovementVariant;
+
+    inline void UpdateValue(Unit newVal, int currentTick) {
+        constexpr size_t kMaxResultCount = 3;
+        if (lastUpdateTick + 1 < currentTick) {
+            mem.clear();
+        }
+        lastUpdateTick = currentTick;
+        mem.push_back(newVal);
+        if (mem.size() > kMaxResultCount) {
+            mem.pop_front();
+        }
+
+        if (mem.size() < 3) {
+            return;
+        }
+        auto supposedRule = ProposeRule(*(++(++mem.rbegin())), *(++mem.rbegin()));
+        ++MovementStat::moveVariant[MovementStat::currMovementVariant];
+        ++totalTries;
+        Unit forPrediction = *(++mem.rbegin());
+        ApplyAvoidRule(forPrediction, supposedRule);
+        const Unit &toCompare = mem.back();
+        constexpr double kMaxAcceptableDiff = 1e-1;
+        const double kMaxAcceptablePosDiff = Constants::INSTANCE.unitAccelerationPerTick * Constants::INSTANCE.tickTime * kMaxAcceptableDiff;
+
+        const double sqrDiff = (forPrediction.position - toCompare.position).sqrNorm();
+        if (sqrDiff < sqr(kMaxAcceptablePosDiff)) {
+            ++MovementStat::successVariant[MovementStat::currMovementVariant];
+            ++successPrediction;
+            lastSuccessfulPrediction = currentTick;
+            DRAW({
+                     debugInterface->addCircle(forPrediction.position, 0.3, debugging::Color(0., 1., 0., 0.9));
+                     for (size_t i = 0; i != 10; ++i) {
+                         ApplyAvoidRule(forPrediction, supposedRule);
+                         debugInterface->addRing(forPrediction.position, Constants::INSTANCE.unitRadius, 0.05,
+                                                 debugging::Color(1., 1., 0., 0.9));
+                     }
+                 });
+        } else {
+            DRAW(debugInterface->addCircle(forPrediction.position, 0.3, debugging::Color(1., 0., 0., 0.9)););
+        }
+    }
+};
+
+inline MoveRule ProposeRule(const Unit &base, const Unit &prev) {
     MoveRule supposedRule;
     supposedRule.keepAim = prev.aim > 1. - 1e-6 || prev.aim > base.aim;
     const double rotationSpeed = RotationSpeed(base.aim, base.weapon);
@@ -483,19 +541,21 @@ inline MoveRule ProposeRule(const Unit& base, const Unit& prev) {
 
     Vec2 velocityDiff = prev.velocity - base.velocity;
     supposedRule.speedLimit = std::numeric_limits<double>::infinity();
-    int currVariant;
     const double velocityDiffNorm = velocityDiff.norm();
     if (velocityDiffNorm > Constants::INSTANCE.unitAccelerationPerTick +
                            1e-8) { // collision detected. just suppose we will move to
         supposedRule.moveDirection = base.position + base.velocity * 50.;
+        MovementStat::currMovementVariant = 0;
     } else if (std::abs(velocityDiffNorm - Constants::INSTANCE.unitAccelerationPerTick) < 1e-5) {
-        // maximum change. need to retrieve direction
+// maximum change. need to retrieve direction
         if (base.aim < 1e-5 && !supposedRule.keepAim) {
             auto newVector = MaxSpeedVector(prev.position, prev.direction, prev.position + prev.velocity,
                                             prev.position + prev.velocity + velocityDiff);
             supposedRule.moveDirection = prev.position + newVector.toLen(50.);
+            MovementStat::currMovementVariant = 1;
         } else {
             supposedRule.moveDirection = prev.position + Vec2(0, 1e-5);
+            MovementStat::currMovementVariant = 2;
         }
     } else {
         Vec2 prevVelocity = prev.velocity;
@@ -504,62 +564,10 @@ inline MoveRule ProposeRule(const Unit& base, const Unit& prev) {
         }
         supposedRule.speedLimit = prevVelocity.norm();
         supposedRule.moveDirection = prev.position + prevVelocity.toLen(50.);
+        MovementStat::currMovementVariant = 3;
     }
     return supposedRule;
 }
-
-struct MovementStat {
-    MovementStat(int val) : lastUpdateTick(0), lastSuccessfulPrediction(0), mem(), totalTries(0),
-                            successPrediction(0) {}
-
-    int lastUpdateTick;
-    int lastSuccessfulPrediction;
-    std::list<Unit> mem;
-    int totalTries;
-    int successPrediction;
-
-    static inline std::array<int, 4> moveVariant;
-    static inline std::array<int, 4> successVariant;
-
-    inline void UpdateValue(Unit newVal, int currentTick) {
-        constexpr size_t kMaxResultCount = 3;
-        if (lastUpdateTick + 1 < currentTick) {
-            mem.clear();
-        }
-        lastUpdateTick = currentTick;
-        mem.push_back(newVal);
-        if (mem.size() > kMaxResultCount) {
-            mem.pop_front();
-        }
-
-        if (mem.size() < 3) {
-            return;
-        }
-        auto supposedRule = ProposeRule(*(++(++mem.rbegin())), *(++mem.rbegin()));
-        ++totalTries;
-        Unit forPrediction = *(++mem.rbegin());
-        ApplyAvoidRule(forPrediction, supposedRule);
-        const Unit &toCompare = mem.back();
-        constexpr double kMaxAcceptableDiff = 1e-1;
-        const double kMaxAcceptablePosDiff = Constants::INSTANCE.unitAccelerationPerTick * Constants::INSTANCE.tickTime * kMaxAcceptableDiff;
-
-        const double sqrDiff = (forPrediction.position - toCompare.position).sqrNorm();
-        if (sqrDiff < sqr(kMaxAcceptablePosDiff)) {
-            ++successPrediction;
-            lastSuccessfulPrediction = currentTick;
-            DRAW({
-                     debugInterface->addCircle(forPrediction.position, 0.3, debugging::Color(0., 1., 0., 0.9));
-                     for (size_t i = 0; i != 10; ++i) {
-                         ApplyAvoidRule(forPrediction, supposedRule);
-                         debugInterface->addRing(forPrediction.position, Constants::INSTANCE.unitRadius, 0.05,
-                                                 debugging::Color(1., 1., 0., 0.9));
-                     }
-                 });
-        } else {
-            DRAW(debugInterface->addCircle(forPrediction.position, 0.3, debugging::Color(1., 0., 0., 0.9)););
-        }
-    }
-};
 
 inline void
 UpdateVisited(std::vector<std::vector<int>> &lastSeenArray, const std::vector<Unit *> &units, int currentTick) {
