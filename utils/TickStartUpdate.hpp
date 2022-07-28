@@ -535,7 +535,7 @@ struct MovementStat {
         Unit forPrediction = *(++mem.rbegin());
         ApplyAvoidRule(forPrediction, supposedRule);
         const Unit &toCompare = mem.back();
-        constexpr double kMaxAcceptableDiff = 1e-3;
+        constexpr double kMaxAcceptableDiff = 1e-1;
         const double kMaxAcceptablePosDiff = Constants::INSTANCE.unitAccelerationPerTick * Constants::INSTANCE.tickTime * kMaxAcceptableDiff;
 
         const double sqrDiff = (forPrediction.position - toCompare.position).sqrNorm();

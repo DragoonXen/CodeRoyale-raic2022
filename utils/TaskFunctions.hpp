@@ -47,20 +47,9 @@ ApplyAttackTask(const Unit &unit,
     const Vec2 aimTarget = [&unit, &unitMovementMem, &target, &currentTick]() -> Vec2 {
         if (auto iter = unitMovementMem.find(target.id); iter != unitMovementMem.end()) {
             auto &movementStat = iter->second;
-            std::optional<MoveRule> proposedRule = [&movementStat, &currentTick, &target]() -> std::optional<MoveRule> {
+            std::optional<MoveRule> proposedRule = [&movementStat, &currentTick]() -> std::optional<MoveRule> {
                 if (movementStat.lastSuccessfulPrediction == currentTick) {
                     return ProposeRule(*(++movementStat.mem.rbegin()), movementStat.mem.back());
-                }
-                auto &movementList = movementStat.mem;
-                if (movementStat.lastUpdateTick == currentTick && movementList.back().velocity.sqrNorm() > sqr(3.) &&
-                    std::abs(AngleDiff(movementList.back().direction.toRadians(), target.direction.toRadians())) <
-                    M_PI / 10.) {
-                    MoveRule rule;
-                    rule.moveDirection = target.position + Vec2(movementList.back().direction) * 50;
-                    rule.lookDirection = rule.moveDirection;
-                    rule.keepAim = false;
-                    rule.speedLimit = std::numeric_limits<double>::infinity();
-                    return rule;
                 }
                 return std::nullopt;
             }();
