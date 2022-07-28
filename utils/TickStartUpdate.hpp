@@ -450,6 +450,59 @@ inline void UpdateUnitFromInfo(Unit &unit, ProjectileUnitsProposals &proposal) {
     unit.lastSeenTick = proposal.tick;
 }
 
+inline MoveRule ProposeRule(const Unit& base, const Unit& prev) {
+    MoveRule supposedRule;
+    supposedRule.keepAim = prev.aim > 1. - 1e-6 || prev.aim > base.aim;
+    const double rotationSpeed = RotationSpeed(base.aim, base.weapon);
+    const double aDiff = AngleDiff(prev.direction.toRadians(), base.direction.toRadians());
+    if (std::abs(aDiff - rotationSpeed) < 1e-5) { // unknown look point but we know rotate direction
+        double resultAngle = M_PI_2;
+        if (resultAngle * aDiff < 0) {
+            resultAngle *= -1.;
+        }
+        const double targetAngle = AddAngle(prev.direction.toRadians(), resultAngle);
+        supposedRule.lookDirection = prev.position + Vec2(targetAngle) * 50.;
+    } else {
+        auto first = Lane(base.position, base.position + base.direction);
+        auto second = Lane(prev.position, prev.position + prev.direction);
+        if (!Parallel(first, second)) {
+            Vec2 intersectPoint;
+            if (Intersect(first, second, intersectPoint)) {
+                Vec2 newVec = intersectPoint - prev.position;
+                if (std::abs(AngleDiff(newVec.toRadians(), prev.direction.toRadians())) < M_PI_2) {
+                    DRAW(debugInterface->addSegment(prev.position, intersectPoint, 0.1,
+                                                    debugging::Color(1., 0., 0., 0.3)););
+                    supposedRule.lookDirection = intersectPoint;
+                } else {
+                    DRAW(debugInterface->addSegment(prev.position, intersectPoint, 0.1,
+                                                    debugging::Color(0., 1., 0., 0.3)););
+                }
+            }
+        }
+    }
+
+    Vec2 velocityDiff = prev.velocity - base.velocity;
+    supposedRule.speedLimit = std::numeric_limits<double>::infinity();
+    int currVariant;
+    const double velocityDiffNorm = velocityDiff.norm();
+    if (velocityDiffNorm > Constants::INSTANCE.unitAccelerationPerTick +
+                           1e-8) { // collision detected. just suppose we will move to
+        supposedRule.moveDirection = base.position + base.velocity * 50.;
+    } else if (std::abs(velocityDiffNorm - Constants::INSTANCE.unitAccelerationPerTick) < 1e-5) {
+        // maximum change. need to retrieve direction
+        if (base.aim < 1e-5 && !supposedRule.keepAim) {
+            auto newVector = MaxSpeedVector(prev.position, prev.direction, prev.position + prev.velocity,
+                                            prev.position + prev.velocity + velocityDiff);
+            supposedRule.moveDirection = prev.position + newVector.toLen(50.);
+        } else {
+            supposedRule.moveDirection = prev.position + Vec2(0, 1e-5);
+        }
+    } else {
+        supposedRule.moveDirection = prev.position + prev.velocity.clone().toLen(50.);
+    }
+    return supposedRule;
+}
+
 struct MovementStat {
     MovementStat(int val) : lastUpdateTick(0), lastSuccessfulPrediction(0), mem(), totalTries(0),
                             successPrediction(0) {}
@@ -477,72 +530,17 @@ struct MovementStat {
         if (mem.size() < 3) {
             return;
         }
-        MoveRule supposedRule;
-        const Unit &base = *(++(++mem.rbegin()));
-        const Unit &prev = *(++mem.rbegin());
-        supposedRule.keepAim = prev.aim > 1. - 1e-6 || prev.aim > base.aim;
-        const double rotationSpeed = RotationSpeed(base.aim, base.weapon);
-        const double aDiff = AngleDiff(prev.direction.toRadians(), base.direction.toRadians());
-        if (std::abs(aDiff - rotationSpeed) < 1e-5) { // unknown look point but we know rotate direction
-            double resultAngle = M_PI_2;
-            if (resultAngle * aDiff < 0) {
-                resultAngle *= -1.;
-            }
-            const double targetAngle = AddAngle(prev.direction.toRadians(), resultAngle);
-            supposedRule.lookDirection = prev.position + Vec2(targetAngle) * 50.;
-        } else {
-            auto first = Lane(base.position, base.position + base.direction);
-            auto second = Lane(prev.position, prev.position + prev.direction);
-            if (!Parallel(first, second)) {
-                Vec2 intersectPoint;
-                if (Intersect(first, second, intersectPoint)) {
-                    Vec2 newVec = intersectPoint - prev.position;
-                    if (std::abs(AngleDiff(newVec.toRadians(), prev.direction.toRadians())) < M_PI_2) {
-                        DRAW(debugInterface->addSegment(prev.position, intersectPoint, 0.1,
-                                                        debugging::Color(1., 0., 0., 0.3)););
-                        supposedRule.lookDirection = intersectPoint;
-                    } else {
-                        DRAW(debugInterface->addSegment(prev.position, intersectPoint, 0.1,
-                                                        debugging::Color(0., 1., 0., 0.3)););
-                    }
-                }
-            }
-        }
-
-        Vec2 velocityDiff = prev.velocity - base.velocity;
-        supposedRule.speedLimit = std::numeric_limits<double>::infinity();
-        int currVariant;
-        const double velocityDiffNorm = velocityDiff.norm();
-        if (velocityDiffNorm > Constants::INSTANCE.unitAccelerationPerTick + 1e-8) { // collision detected. just suppose we will move to
-            supposedRule.moveDirection = base.position + base.velocity * 50.;
-            currVariant = 0;
-        } else if (std::abs(velocityDiffNorm - Constants::INSTANCE.unitAccelerationPerTick) < 1e-5) {
-            // maximum change. need to retrieve direction
-            if (base.aim < 1e-5 && !supposedRule.keepAim) {
-                auto newVector = MaxSpeedVector(prev.position, prev.direction, prev.position + prev.velocity,
-                                                prev.position + prev.velocity + velocityDiff);
-                supposedRule.moveDirection = prev.position + newVector.toLen(50.);
-                currVariant = 1;
-            } else {
-                supposedRule.moveDirection = prev.position + Vec2(0, 1e-5);
-                currVariant = 2;
-            }
-        } else {
-            supposedRule.moveDirection = prev.position + prev.velocity.clone().toLen(50.);
-            currVariant = 3;
-        }
+        auto supposedRule = ProposeRule(*(++(++mem.rbegin())), *(++mem.rbegin()));
         ++totalTries;
-        Unit forPrediction = prev;
+        Unit forPrediction = *(++mem.rbegin());
         ApplyAvoidRule(forPrediction, supposedRule);
         const Unit &toCompare = mem.back();
-        ++moveVariant[currVariant];
         constexpr double kMaxAcceptableDiff = 1e-3;
         const double kMaxAcceptablePosDiff = Constants::INSTANCE.unitAccelerationPerTick * Constants::INSTANCE.tickTime * kMaxAcceptableDiff;
 
         const double sqrDiff = (forPrediction.position - toCompare.position).sqrNorm();
         if (sqrDiff < sqr(kMaxAcceptablePosDiff)) {
             ++successPrediction;
-            ++successVariant[currVariant];
             lastSuccessfulPrediction = currentTick;
             DRAW({
                      debugInterface->addCircle(forPrediction.position, 0.3, debugging::Color(0., 1., 0., 0.9));
