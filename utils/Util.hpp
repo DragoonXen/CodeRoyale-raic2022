@@ -268,6 +268,7 @@ inline double EvaluateDanger(Vec2 pos, std::vector<std::vector<std::pair<int, do
     // angle, danger, playerId
     std::vector<std::tuple<double, double, int >> unitsDanger;
     double sumDanger = 0.;
+    const std::array<int, 4> weaponDangerRadius = {12, 11, 18, 4};
     for (auto& unit : game.units) {
         if (unit.playerId == game.myId) {
             continue;
@@ -277,7 +278,7 @@ inline double EvaluateDanger(Vec2 pos, std::vector<std::vector<std::pair<int, do
         unitsDanger.emplace_back(positionDiff.toRadians(), CalculateDanger(targetPos, unit),
                                  unit.playerId);
         // distance of 5
-        if (positionDiff.sqrNorm() < sqr(11.)) {
+        if (positionDiff.sqrNorm() < sqr(weaponDangerRadius[unit.weapon.value_or(3)])) {
             sumDanger += std::get<1>(unitsDanger.back());
         }
     }
