@@ -167,12 +167,15 @@ IsCollide(Vec2 position, Vec2 velocity, Vec2 position2, Vec2 velocity2, const do
 }
 
 inline void ApplyDamage(Unit& unit, double incomingDamage, int tick) {
-    if (incomingDamage - 1e-6 > unit.shield) {
-        incomingDamage -= unit.shield;
-        unit.shield = 0;
-        unit.healthRegenerationStartTick = tick + Constants::INSTANCE.healthRegenerationDelayTicks;
+    if (unit.shield > 1e-5) {
+        const double shieldMitigate = std::min(unit.shield, incomingDamage);
+        unit.shield -= shieldMitigate;
+        incomingDamage -= shieldMitigate;
     }
-    unit.health -= incomingDamage;
+    if (incomingDamage > 1e-8) {
+        unit.healthRegenerationStartTick = tick + Constants::INSTANCE.healthRegenerationDelayTicks;
+        unit.health = std::max(unit.health - incomingDamage, 0.);
+    }
 }
 
 struct ZoneMover {
