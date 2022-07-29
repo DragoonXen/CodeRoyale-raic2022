@@ -182,18 +182,48 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
     myUnits = filterUnits(game.units, my_units_filter);
     auto enemyUnits = filterUnits(game.units, enemies_filter);
 
+    constexpr double preventChargeDanger = 0.1;
+    constexpr double chargeDanger = 0.2;
     std::unordered_map<int, std::unordered_map<int, double>> unitDanger;
     for (const auto &unit: myUnits) {
         unitDanger[unit->id] = std::unordered_map<int, double>();
-        auto &myUnitMap = unitDanger[unit->id];
+        auto &currUnitDangerMap = unitDanger[unit->id];
+        double maxDanger = 0.;
+        double secondMaxDanger = 0.;
         for (const auto &enemyUnit: enemyUnits) {
-            myUnitMap[enemyUnit->id] = CalculateDanger(unit->position, *enemyUnit);
+            const double currDanger = CalculateDanger(unit->position, *enemyUnit);
+            currUnitDangerMap[enemyUnit->id] = currDanger;
+            if (currDanger > maxDanger) {
+                secondMaxDanger = maxDanger;
+                maxDanger = currDanger;
+            } else if (currDanger > secondMaxDanger) {
+                secondMaxDanger = currDanger;
+            }
 //            DRAW({
 //                     debugInterface->addPlacedText(enemyUnit->position + distanceVec * .5,
 //                                                   std::to_string(enemyUnit->id) + " danger " + std::to_string(danger),
 //                                                   {0.5, 0.5}, 0.7,
 //                                                   debugging::Color(0.8, 0, 0, 1.));
 //                 });
+        }
+        // closest enemy
+        if (secondMaxDanger < preventChargeDanger) {
+            const Unit *enemy = nullptr;
+            double minDistance = sqr(20.);// no charge further than
+            for (const auto &enemyUnit: enemyUnits) {
+                if (enemyUnit->playerId != *enemyId) {
+                    continue;
+                }
+                const double sqrDist = (enemyUnit->position - unit->position).sqrNorm();
+                if (sqrDist < minDistance) {
+                    minDistance = sqrDist;
+                    enemy = enemyUnit;
+                }
+            }
+            if (enemy != nullptr &&
+                (maxDanger < preventChargeDanger || currUnitDangerMap[unit->id] + 1e-8 > maxDanger)) {
+                currUnitDangerMap[unit->id] = chargeDanger + 1e-8;
+            }
         }
     }
 
@@ -334,7 +364,7 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
             auto &currentUnitDangers = unitDanger[unit->id];
             int count = 0;
             for (auto &danger: currentUnitDangers) {
-                if (danger.second > 0.1) {
+                if (danger.second > preventChargeDanger) {
                     ++count;
                 }
             }
@@ -343,7 +373,7 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
             }
             std::optional<int> id = std::nullopt;
             for (auto &danger: currentUnitDangers) {
-                if (danger.second > 0.2) {
+                if (danger.second > chargeDanger) {
                     id = danger.first;
                     break;
                 }
