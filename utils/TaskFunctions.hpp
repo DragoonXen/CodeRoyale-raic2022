@@ -82,14 +82,15 @@ ApplyAttackTask(const Unit &unit,
 
     DRAW(DrawCross(aimTarget, 0.3, debugging::Color(1., 0., 0., 0.5), debugInterface););
 
-    const double angleDiff = AngleDiff(unit.direction.toRadians(), (aimTarget - unit.position).toRadians());
+    const double angleDiff = AngleDiff((aimTarget - unit.position).toRadians(), unit.direction.toRadians());
     const double angleDiffAbs = std::abs(angleDiff);
     const double rotateSpeed = RotationSpeed(unit);
     const double acceptableWeaponDistance = kWeaponDistance[*unit.weapon] + kAcceptableAdditionalDistance;
-    const double currentDistance = (target.position - unit.position).norm();
+    const Vec2 aimVector = target.position - unit.position;
+    const double currentDistance = aimVector.norm();
 
     // how many ticks I need to rotate with current speed
-    const double ticksToRotate = angleDiffAbs / rotateSpeed;
+    double ticksToRotate = angleDiffAbs / rotateSpeed;
 
     // how many ticks until next shot
     int ticksToPossibleShot = unit.nextShotTick - currentTick;
@@ -100,7 +101,39 @@ ApplyAttackTask(const Unit &unit,
         ticksToPossibleShot = std::max(ticksToPossibleShot,
                                        (int) (*unit.remainingSpawnTime / constants.tickTime + 1e-2));
     }
-    if (ticksToRotate < 1 && unit.aim + 1e-5 > 1 && ticksToPossibleShot <= 0 &&
+    if (acceptableWeaponDistance > currentDistance && ticksToRotate + 1e-8 > 1.) {
+        const double aimAngle = (aimTarget - unit.position).toRadians();
+        const double rotateChange =
+                angleDiff > 0. ? std::min(rotateSpeed, angleDiff) : std::max(-rotateSpeed, angleDiff);
+        const double spread = Constants::INSTANCE.weapons[*unit.weapon].spread * .5;
+        const double resultAimAngle =
+                rotateChange > 0. ? AddAngle(unit.direction.toRadians(), rotateChange) : SubstractAngle(
+                        unit.direction.toRadians(), -rotateChange);
+        const double minSpreadAngle = SubstractAngle(resultAimAngle, spread);
+        const double maxSpreadAngle = AddAngle(resultAimAngle, spread);
+
+        auto unitNorm = aimVector.clone().rotate90().toLen(Constants::INSTANCE.unitRadius);
+        Vec2 point = aimTarget + unitNorm;
+        Vec2 point2 = aimTarget - unitNorm;
+        DRAW({
+                 debugInterface->addSegment(unit.position, unit.position + Vec2(minSpreadAngle) * currentDistance, 0.02,
+                                            debugging::Color(0., 0., 1., 0.5));
+                 debugInterface->addSegment(unit.position, unit.position + Vec2(maxSpreadAngle) * currentDistance, 0.02,
+                                            debugging::Color(1., 0., 0., 0.5));
+                 DrawCross(point, 0.1, debugging::Color(0., 0., 0., 0.5), debugInterface);
+                 DrawCross(point2, 0.1, debugging::Color(0., 0., 0., 0.5), debugInterface);
+                 debugInterface->addSegment(unit.position, point, 0.02, debugging::Color(0., 0.5, 1., 0.5));
+                 debugInterface->addSegment(unit.position, point2, 0.02, debugging::Color(1., 0.5, 0., 0.5));
+             });
+        const double firstAngle = (point - unit.position).toRadians();
+        const double secondAngle = (point2 - unit.position).toRadians();
+        if (AngleBetween(minSpreadAngle, firstAngle, secondAngle)) {
+            if (AngleBetween(maxSpreadAngle, firstAngle, secondAngle)) {
+                ticksToRotate = 1.;
+            }
+        }
+    }
+    if (ticksToRotate - 1e-8 < 1. && unit.aim + 1e-5 > 1. && ticksToPossibleShot <= 0 &&
         acceptableWeaponDistance > currentDistance) {
         order.lookPoint = aimTarget;
         const auto &myFilter = visibilityFilters[unit.id];

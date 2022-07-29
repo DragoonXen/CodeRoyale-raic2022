@@ -144,6 +144,7 @@ public:
         for (auto& weapon : weapons) {
             weapon.aimRotationSpeed *= M_PI / 180. / ticksPerSecond;
             weapon.aimFieldOfView *= M_PI / 180.;
+            weapon.spread *= M_PI / 180.;
             weapon.aimPerTick = tickTime / weapon.aimTime;
             weapon.ticksBetweenRounds = (int) round(this->ticksPerSecond / weapon.roundsPerSecond);
         }
