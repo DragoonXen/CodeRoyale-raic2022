@@ -8,9 +8,9 @@ if(WIN32)
     SET(PROJECT_LIBS Ws2_32.lib)
 endif()
 
-#add_definitions(-DDEBUG_INFO)
-#add_definitions(-DTIMING_ENABLED)
-#add_definitions(-DTICK_DEBUG_ENABLED)
+add_definitions(-DDEBUG_INFO)
+add_definitions(-DTIMING_ENABLED)
+add_definitions(-DTICK_DEBUG_ENABLED)
 SET(CMAKE_EXE_LINKER_FLAGS "-static")
 
 set(HEADERS

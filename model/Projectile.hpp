@@ -27,6 +27,8 @@ public:
     // Left time of projectile's life
     double lifeTime;
 
+    Projectile() = default;
+
     Projectile(int id, int weaponTypeIndex, int shooterId, int shooterPlayerId, model::Vec2 position, model::Vec2 velocity, double lifeTime);
 
     // Read Projectile from input stream

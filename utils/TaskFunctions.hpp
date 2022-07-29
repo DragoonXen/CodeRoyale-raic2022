@@ -41,31 +41,35 @@ ApplyAttackTask(const Unit &unit,
                 const int currentTick,
                 std::unordered_map<int, VisibleFilter> &visibilityFilters,
                 const std::unordered_map<int, MovementStat>& unitMovementMem,
-                POrder &order) {
+                POrder &order,
+                bool preciseShot,
+                const model::Zone& zone,
+                std::vector<std::vector<std::pair<int, double>>>& dangerMatrix) {
     const Constants& constants = Constants::INSTANCE;
 
-    const Vec2 aimTarget = [&unit, &unitMovementMem, &target, &currentTick]() -> Vec2 {
-        if (auto iter = unitMovementMem.find(target.id); iter != unitMovementMem.end()) {
+    std::optional<MoveRule> proposedRule = [&unitMovementMem, targetId = target.id, currentTick]() -> std::optional<MoveRule> {
+        if (auto iter = unitMovementMem.find(targetId); iter != unitMovementMem.end()) {
             auto &movementStat = iter->second;
-            std::optional<MoveRule> proposedRule = [&movementStat, &currentTick]() -> std::optional<MoveRule> {
-                if (movementStat.lastSuccessfulPrediction == currentTick) {
-                    return ProposeRule(*(++movementStat.mem.rbegin()), movementStat.mem.back());
-                }
-                return std::nullopt;
-            }();
-            if (proposedRule.has_value()) {
-                Unit copy = target;
-                const Constants &constants = Constants::INSTANCE;
-                double bulletSpeed = constants.weapons[*unit.weapon].projectileSpeed * constants.tickTime;
-                for (size_t tick = 1; tick <= 30; ++tick) {
-                    ApplyAvoidRule(copy, *proposedRule);
-                    DRAW({
-                             debugInterface->addRing(copy.position, 1., .01, debugging::Color(0., 0., 1., .8));
-                         });
-                    double distance = (copy.position - unit.position).norm() - constants.unitRadius * 2;
-                    if (bulletSpeed * tick >= distance) {
-                        return copy.position;
-                    }
+            if (movementStat.lastSuccessfulPrediction == currentTick) {
+                return ProposeRule(*(++movementStat.mem.rbegin()), movementStat.mem.back());
+            }
+        }
+        return std::nullopt;
+    }();
+
+    const Vec2 aimTarget = [&unit, &target, &proposedRule]() -> Vec2 {
+        if (proposedRule.has_value()) {
+            Unit copy = target;
+            const Constants &constants = Constants::INSTANCE;
+            double bulletSpeed = constants.weapons[*unit.weapon].projectileSpeed * constants.tickTime;
+            for (size_t tick = 1; tick <= 30; ++tick) {
+                ApplyAvoidRule(copy, *proposedRule);
+                DRAW({
+                         debugInterface->addRing(copy.position, 1., .01, debugging::Color(0., 0., 1., .8));
+                     });
+                double distance = (copy.position - unit.position).norm() - constants.unitRadius * 2;
+                if (bulletSpeed * tick >= distance) {
+                    return copy.position;
                 }
             }
         }
@@ -75,6 +79,49 @@ ApplyAttackTask(const Unit &unit,
                                   target.velocity.toLen(totalVelocity) * constants.tickTime :
                                   target.direction * 0.3);
     }();
+    bool shotBlocked = false;
+    if (unit.aim + 1e-7 > 1. && preciseShot) {
+        static Game simGame;
+        Projectile projectile;
+        projectile.id = -1;
+        projectile.weaponTypeIndex = *unit.weapon;
+        projectile.shooterId = unit.id;
+        projectile.shooterPlayerId = unit.playerId;
+        const Vec2 direction = aimTarget - unit.position;
+        projectile.velocity = direction.toLen(Constants::INSTANCE.weapons[projectile.weaponTypeIndex].projectileSpeed);
+        projectile.position = unit.position + direction.toLen(1.);
+        projectile.lifeTime = Constants::INSTANCE.weapons[projectile.weaponTypeIndex].projectileLifeTime;
+        UpdateLifetime(projectile);
+        simGame.projectiles.clear();
+        simGame.projectiles.push_back(projectile);
+        simGame.units.clear();
+        simGame.zone = zone;
+
+        std::vector<MoveRule> baseRule;
+        Vec2 norm = {projectile.velocity.y, -projectile.velocity.x};
+        constexpr double kMoveLength = 30.;
+        baseRule.push_back(
+                {target.position + norm.toLen(kMoveLength), target.position + norm.toLen(kMoveLength), false,
+                 std::numeric_limits<double>::infinity()});
+        baseRule.push_back(
+                {target.position - norm.toLen(kMoveLength), target.position + norm.toLen(kMoveLength), false,
+                 std::numeric_limits<double>::infinity()});
+
+        for (const auto &dir: kMoveDirections) {
+            baseRule.push_back({target.position + dir * kMoveLength, target.position + dir * kMoveLength, false,
+                                std::numeric_limits<double>::infinity()});
+        }
+        std::vector<ComplexMoveRule> complexRules;
+        complexRules.reserve(baseRule.size());
+        for (const auto &rule: baseRule) {
+            if (proposedRule.has_value()) {
+                complexRules.emplace_back(ComplexMoveRule({{*proposedRule, 1},
+                                                           {rule,          0}}));
+            }
+        }
+        const auto &[score, nom] = ChooseBest(target, simGame, complexRules, dangerMatrix);
+        shotBlocked = score < 9.;
+    }
 
     DRAW(DrawCross(aimTarget, 0.3, debugging::Color(1., 0., 0., 0.5), debugInterface););
 
@@ -102,6 +149,7 @@ ApplyAttackTask(const Unit &unit,
         const auto &myFilter = visibilityFilters[unit.id];
         bool shoot = unit.lastSeenTick == target.lastSeenTick &&
                      IsVisible<VisionFilter::kShootFilter>(unit.position, unit.direction, 100., aimTarget, myFilter);
+        shoot &= !shotBlocked;
         if (shoot) {
             for (const auto& myUnit : myUnits) {
                 if (myUnit->id == unit.id) {

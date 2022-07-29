@@ -82,6 +82,24 @@ GetClosestCollision(Vec2 start, Vec2 finish, const double addRadius, std::option
     return {closest_obstacle, point};
 }
 
+inline void UpdateLifetime(Projectile &projectile) {
+    const Constants &constants = Constants::INSTANCE;
+    double remaining_time = projectile.lifeTime;
+    Vec2 position = projectile.position;
+    while (remaining_time > 1e-10) {
+        const double currSimTime = std::min(constants.tickTime, remaining_time);
+        Vec2 next_pos = position + projectile.velocity * currSimTime;
+        const auto &[obstacle, point] = GetClosestCollision<true>(position, next_pos, 0);
+        if (obstacle) {
+            projectile.lifeTime = projectile.lifeTime - remaining_time
+                                  + (point - position).norm() / (next_pos - position).norm() * currSimTime;
+            return;
+        }
+        remaining_time -= constants.tickTime;
+        position = next_pos;
+    }
+}
+
 inline double CalcResultAim(bool keep, double start, const std::optional<int>& weapon) {
     DRAW(
         if (keep && !weapon) {

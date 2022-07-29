@@ -21,6 +21,8 @@ public:
     // Next radius
     double nextRadius;
 
+    Zone() = default;
+
     Zone(model::Vec2 currentCenter, double currentRadius, model::Vec2 nextCenter, double nextRadius);
 
     // Read Zone from input stream

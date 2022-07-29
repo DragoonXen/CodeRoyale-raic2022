@@ -377,6 +377,20 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
             auto opponentIter = opponentUnits.find(unit->id);
 
             std::sort(distances.begin(), distances.end());
+
+            bool preciseShot = false;
+            if (!distances.empty()) {
+                const auto &enUnit = enemyUnits[distances.front().second];
+                const bool playerUnit = enemyId.has_value() && *enemyId == enUnit->playerId;
+                const bool shootTimerPassed = enUnit->nextShotTick <= game.currentTick;
+                const bool notAiming = enUnit->aim < 1e-5;
+                const bool singleTarget = distances.size() == 1 || distances[1].first > sqr(30);
+                const bool lookNotOntoMe = std::abs(
+                        AngleDiff(enUnit->direction.toRadians(), (unit->position - enUnit->position).toRadians())) >
+                                           30.;
+                preciseShot = playerUnit && lookNotOntoMe && shootTimerPassed && notAiming;
+            }
+
             const double damageUnitCouldCause = DamageCouldCause(*unit);
             for (const auto &item: distances) {
                 const auto &enUnit = enemyUnits[item.second];
@@ -421,9 +435,10 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
                                 std::to_string(unit->id) + " attack enemy " + std::to_string(enUnit->id),
                                 {OrderType::kAction, OrderType::kRotate}};
                 attackTask.score = moveTask.score * std::max((unit->aim - 0.45) * 20., 1.);
-                attackTask.func = [unit, &myUnits, enUnit, tick = game.currentTick, &visibilityFilters, &mem = this->unitMovementMem](
+                attackTask.func = [unit, &myUnits, enUnit, &game, &visibilityFilters, &mem = this->unitMovementMem, preciseShot, &dangerMatrix](
                         const std::any &evalData, POrder &order) -> std::vector<OrderType> {
-                    return ApplyAttackTask(*unit, myUnits, *enUnit, tick, visibilityFilters, mem, order);
+                    return ApplyAttackTask(*unit, myUnits, *enUnit, game.currentTick, visibilityFilters, mem, order,
+                                           preciseShot, game.zone, dangerMatrix);
                 };
                 tasks.push(attackTask);
             };

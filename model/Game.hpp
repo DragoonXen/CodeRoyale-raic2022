@@ -40,6 +40,8 @@ public:
     // List of sounds heard by your team during last tick
     std::vector<model::Sound> sounds;
 
+    Game() = default;
+
     Game(int myId, std::vector<model::Player> players, int currentTick, std::vector<model::Unit> units, std::vector<model::Loot> loot, std::vector<model::Projectile> projectiles, model::Zone zone, std::vector<model::Sound> sounds);
 
     // Read Game from input stream
