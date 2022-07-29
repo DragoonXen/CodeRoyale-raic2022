@@ -728,11 +728,23 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
                 tasks.push(battleMovementWhileDrinking);
             }
         }
+        bool emergencyMovementEnabled = false;
         if (unit->shield + unit->health <= 100.000001) {
+            emergencyMovementEnabled = true;
+            if (unit->shieldPotions == 0) {
+                const double currentDanger = EvaluateDanger(unit->position, dangerMatrix, game);
+                if (currentDanger < 0.2) {
+                    emergencyMovementEnabled = false;
+                }
+            }
+        }
+
+        if (emergencyMovementEnabled) {
             Task battleMovementWhileDrinking{102, unit->id,
                                              std::to_string(unit->id) + " danger battle movement",
                                              {OrderType::kMove}};
-            battleMovementWhileDrinking.score = EvaluateDangerIncludeObstacles(unit->id, unit->position, dangerMatrix, game) * 50000.;
+            battleMovementWhileDrinking.score =
+                    EvaluateDangerIncludeObstacles(unit->id, unit->position, dangerMatrix, game) * 50000.;
             battleMovementWhileDrinking.func = [unit, &dangerMatrix, &game, &visibilityFilters](
                     const std::any &evalData, POrder &order) -> std::vector<OrderType> {
                 return ApplyBattleMovement(*unit, dangerMatrix, game, visibilityFilters[unit->id], order);
