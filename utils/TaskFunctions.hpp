@@ -79,49 +79,6 @@ ApplyAttackTask(const Unit &unit,
                                   target.velocity.toLen(totalVelocity) * constants.tickTime :
                                   target.direction * 0.3);
     }();
-    bool shotBlocked = false;
-    if (unit.aim + 1e-7 > 1. && preciseShot) {
-        static Game simGame;
-        Projectile projectile;
-        projectile.id = -1;
-        projectile.weaponTypeIndex = *unit.weapon;
-        projectile.shooterId = unit.id;
-        projectile.shooterPlayerId = unit.playerId;
-        const Vec2 direction = aimTarget - unit.position;
-        projectile.velocity = direction.toLen(Constants::INSTANCE.weapons[projectile.weaponTypeIndex].projectileSpeed);
-        projectile.position = unit.position + direction.toLen(1.);
-        projectile.lifeTime = Constants::INSTANCE.weapons[projectile.weaponTypeIndex].projectileLifeTime;
-        UpdateLifetime(projectile);
-        simGame.projectiles.clear();
-        simGame.projectiles.push_back(projectile);
-        simGame.units.clear();
-        simGame.zone = zone;
-
-        std::vector<MoveRule> baseRule;
-        Vec2 norm = {projectile.velocity.y, -projectile.velocity.x};
-        constexpr double kMoveLength = 30.;
-        baseRule.push_back(
-                {target.position + norm.toLen(kMoveLength), target.position + norm.toLen(kMoveLength), false,
-                 std::numeric_limits<double>::infinity()});
-        baseRule.push_back(
-                {target.position - norm.toLen(kMoveLength), target.position + norm.toLen(kMoveLength), false,
-                 std::numeric_limits<double>::infinity()});
-
-        for (const auto &dir: kMoveDirections) {
-            baseRule.push_back({target.position + dir * kMoveLength, target.position + dir * kMoveLength, false,
-                                std::numeric_limits<double>::infinity()});
-        }
-        std::vector<ComplexMoveRule> complexRules;
-        complexRules.reserve(baseRule.size());
-        for (const auto &rule: baseRule) {
-            if (proposedRule.has_value()) {
-                complexRules.emplace_back(ComplexMoveRule({{*proposedRule, 1},
-                                                           {rule,          0}}));
-            }
-        }
-        const auto &[score, nom] = ChooseBest(target, simGame, complexRules, dangerMatrix);
-        shotBlocked = score < 9.;
-    }
 
     DRAW(DrawCross(aimTarget, 0.3, debugging::Color(1., 0., 0., 0.5), debugInterface););
 
@@ -149,7 +106,51 @@ ApplyAttackTask(const Unit &unit,
         const auto &myFilter = visibilityFilters[unit.id];
         bool shoot = unit.lastSeenTick == target.lastSeenTick &&
                      IsVisible<VisionFilter::kShootFilter>(unit.position, unit.direction, 100., aimTarget, myFilter);
-        shoot &= !shotBlocked;
+        if (shoot && preciseShot) {
+            static Game simGame;
+            Projectile projectile;
+            projectile.id = -1;
+            projectile.weaponTypeIndex = *unit.weapon;
+            projectile.shooterId = unit.id;
+            projectile.shooterPlayerId = unit.playerId;
+            const Vec2 direction = aimTarget - unit.position;
+            projectile.velocity = direction.toLen(
+                    Constants::INSTANCE.weapons[projectile.weaponTypeIndex].projectileSpeed);
+            projectile.position = unit.position + direction.toLen(1.);
+            projectile.lifeTime = Constants::INSTANCE.weapons[projectile.weaponTypeIndex].projectileLifeTime;
+            UpdateLifetime(projectile);
+            simGame.projectiles.clear();
+            simGame.projectiles.push_back(projectile);
+            simGame.units.clear();
+            simGame.zone = zone;
+
+            std::vector<MoveRule> baseRule;
+            Vec2 norm = {projectile.velocity.y, -projectile.velocity.x};
+            constexpr double kMoveLength = 30.;
+            baseRule.push_back(
+                    {target.position + norm.toLen(kMoveLength), target.position + norm.toLen(kMoveLength), false,
+                     std::numeric_limits<double>::infinity()});
+            baseRule.push_back(
+                    {target.position - norm.toLen(kMoveLength), target.position + norm.toLen(kMoveLength), false,
+                     std::numeric_limits<double>::infinity()});
+
+            for (const auto &dir: kMoveDirections) {
+                baseRule.push_back({target.position + dir * kMoveLength, target.position + dir * kMoveLength, false,
+                                    std::numeric_limits<double>::infinity()});
+            }
+            std::vector<ComplexMoveRule> complexRules;
+            complexRules.reserve(baseRule.size());
+            for (const auto &rule: baseRule) {
+                if (proposedRule.has_value()) {
+                    complexRules.emplace_back(ComplexMoveRule({{*proposedRule, 1},
+                                                               {rule,          0}}));
+                } else {
+                    complexRules.emplace_back(ComplexMoveRule(rule));
+                }
+            }
+            const auto &[score, nom] = ChooseBest(target, simGame, complexRules, dangerMatrix);
+            shoot = score > 9.;
+        }
         if (shoot) {
             for (const auto& myUnit : myUnits) {
                 if (myUnit->id == unit.id) {
