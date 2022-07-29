@@ -118,6 +118,9 @@ inline Vec2 MaxSpeedVector(Vec2 position, Vec2 direction, Vec2 target, const dou
 }
 
 inline Vec2 MaxSpeedVector(Unit &unit, Vec2 target, const double aimModifier = 1) {
+    if ((unit.position - target).sqrNorm() < 1e-16) {
+        target -= Vec2(1e-6, 0);
+    }
     if (unit.remainingSpawnTime.has_value()) {
         return (target - unit.position).toLen(Constants::INSTANCE.spawnMovementSpeed);
     }
