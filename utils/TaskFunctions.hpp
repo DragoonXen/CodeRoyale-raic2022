@@ -101,8 +101,7 @@ ApplyAttackTask(const Unit &unit,
         ticksToPossibleShot = std::max(ticksToPossibleShot,
                                        (int) (*unit.remainingSpawnTime / constants.tickTime + 1e-2));
     }
-    if (acceptableWeaponDistance > currentDistance && ticksToRotate + 1e-8 > 1.) {
-        const double aimAngle = (aimTarget - unit.position).toRadians();
+    if (acceptableWeaponDistance > currentDistance && ticksToRotate + 1e-8 > 1. && ticksToPossibleShot < 10) {
         const double rotateChange =
                 angleDiff > 0. ? std::min(rotateSpeed, angleDiff) : std::max(-rotateSpeed, angleDiff);
         const double spread = Constants::INSTANCE.weapons[*unit.weapon].spread * .5;
