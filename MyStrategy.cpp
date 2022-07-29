@@ -382,13 +382,14 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
             if (!distances.empty()) {
                 const auto &enUnit = enemyUnits[distances.front().second];
                 const bool playerUnit = enemyId.has_value() && *enemyId == enUnit->playerId;
-                const bool shootTimerPassed = enUnit->nextShotTick <= game.currentTick;
-                const bool notAiming = enUnit->aim < 1e-5;
+//                const bool shootTimerPassed = enUnit->nextShotTick <= game.currentTick;
+//                const bool notAiming = enUnit->aim < 1e-5;
                 const bool singleTarget = distances.size() == 1 || distances[1].first > sqr(30);
-                const bool lookNotOntoMe = std::abs(
-                        AngleDiff(enUnit->direction.toRadians(), (unit->position - enUnit->position).toRadians())) >
-                                           30.;
-                preciseShot = playerUnit && lookNotOntoMe && shootTimerPassed && notAiming;
+//                const bool lookNotOntoMe = std::abs(
+//                        AngleDiff(enUnit->direction.toRadians(), (unit->position - enUnit->position).toRadians())) >
+//                                           M_PI / 180. * 30.;
+                bool isCurrOpponent = (opponentIter != opponentUnits.end() && opponentIter->second == enUnit->id);
+                preciseShot = playerUnit && isCurrOpponent && singleTarget;
             }
 
             const double damageUnitCouldCause = DamageCouldCause(*unit);
