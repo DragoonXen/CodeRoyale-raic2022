@@ -1108,9 +1108,10 @@ model::Order MyStrategy::getOrder(const model::Game &game_base, DebugInterface *
             }
         }
 
-        auto [score, ruleId] = ChooseBest(*unit, game, complexRules, dangerMatrix);
+        auto [score, retRuleId] = ChooseBest(*unit, game, complexRules, dangerMatrix);
+        const auto ruleId = retRuleId;
 
-        const auto [resultUnit, dScore, _2] = Simulate(*unit, game, complexRules[ruleId], 1);
+        const auto [resultUnit, dScore, _2] = Simulate(*unit, game, complexRules[ruleId], 1);        
         DRAWK('I', { Simulate(*unit, game, complexRules[ruleId], 20, true); });
         incomingDamage[unit->id] = (unit->shield + unit->health) - (resultUnit.shield + resultUnit.health);
         auto order = ApplyAvoidRule(*unit, complexRules[ruleId].storage.front());

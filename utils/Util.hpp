@@ -6,6 +6,7 @@
 #define AI_CUP_22_UTIL_HPP
 
 #include <tuple>
+#include <array>
 #include <optional>
 #include "model/Obstacle.hpp"
 #include "model/Vec2.hpp"
